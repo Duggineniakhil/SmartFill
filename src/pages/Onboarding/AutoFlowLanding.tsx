@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import iconUrl from "@/assets/autoflow-icon.png?url";
 
 const STEPS = [
-  { n: "01", t: "Fill once", d: "Submit any form — internship app, signup, contact page. AutoFlow watches silently." },
+  { n: "01", t: "Fill once", d: "Submit any form — internship app, signup, contact page. SmartFill watches silently." },
   { n: "02", t: "It learns", d: "Name, email, phone, college, GPA, LinkedIn, GitHub — saved on your device. Never passwords." },
   { n: "03", t: "Autofill anywhere", d: "Next time a similar field shows up, a ⚡ badge offers to fill it. One click, done." },
 ];
@@ -19,13 +19,13 @@ export default function AutoFlowLanding() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = "AutoFlow — Smart form autofill that learns";
+    document.title = "SmartFill — Smart form autofill that learns";
   }, []);
 
   const download = () => {
     setDownloading(true);
     setErr(null);
-    fetch("/autoflow-extension.zip")
+    fetch("/smartfill-extension.zip")
       .then((r) => {
         if (!r.ok) throw new Error(`Download failed: ${r.status}`);
         return r.blob();
@@ -33,7 +33,7 @@ export default function AutoFlowLanding() {
       .then((blob) => {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "autoflow-extension.zip";
+        a.download = "smartfill-extension.zip";
         a.click();
         URL.revokeObjectURL(a.href);
       })
@@ -56,7 +56,7 @@ export default function AutoFlowLanding() {
       <header className="relative max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <img src={iconUrl} alt="" width={28} height={28} className="rounded" />
-          <span className="font-bold tracking-[0.12em] uppercase text-sm">AutoFlow</span>
+          <span className="font-bold tracking-[0.12em] uppercase text-sm">SmartFill</span>
         </div>
         <a
           href="#install"
@@ -80,7 +80,7 @@ export default function AutoFlowLanding() {
             Forever.
           </h1>
           <p className="mt-6 text-lg text-zinc-400 max-w-xl">
-            AutoFlow watches the forms you actually fill, learns who you are, and
+            SmartFill watches the forms you actually fill, learns who you are, and
             quietly offers to fill matching fields anywhere on the web — privately,
             on your device.
           </p>
@@ -184,7 +184,7 @@ export default function AutoFlowLanding() {
             <>Open <code className="text-cyan-400 font-mono">chrome://extensions</code> in your browser.</>,
             <>Toggle <strong>Developer mode</strong> on (top-right).</>,
             <>Click <strong>Load unpacked</strong> and pick the unzipped folder.</>,
-            "Pin AutoFlow to your toolbar, then fill any form to teach it.",
+            "Pin SmartFill to your toolbar, then fill any form to teach it.",
           ].map((step, i) => (
             <li key={i} className="flex gap-5">
               <span className="text-cyan-400 font-mono text-sm pt-1 shrink-0 w-6">{String(i + 1).padStart(2, "0")}</span>
@@ -204,7 +204,7 @@ export default function AutoFlowLanding() {
       </section>
 
       <footer className="relative max-w-6xl mx-auto px-6 py-10 border-t border-zinc-900 flex items-center justify-between text-xs text-zinc-500">
-        <span>AutoFlow · Privacy-first form autofill</span>
+        <span>SmartFill · Privacy-first form autofill</span>
         <span className="font-mono">v1.0.0</span>
       </footer>
     </div>

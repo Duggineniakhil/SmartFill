@@ -3,7 +3,7 @@ import { AppSidebar, SidebarContent } from "./AppSidebar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
-import { StackedLogo } from "./StackedLogo";
+import { StackedLogo } from "@/components/profile/StackedLogo";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);

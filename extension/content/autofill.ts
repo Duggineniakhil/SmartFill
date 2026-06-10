@@ -1,4 +1,4 @@
-// AutoFlow content script — capture + autofill
+// SmartFill content script — capture + autofill
 (function () {
   const { classify, isForbidden } = window.__AUTOFLOW__;
 
@@ -48,7 +48,7 @@
     btn.type = "button";
     btn.className = BADGE_CLASS;
     btn.textContent = "⚡";
-    btn.title = `AutoFlow: fill "${value}"`;
+    btn.title = `SmartFill: fill "${value}"`;
     btn.style.cssText = `
       pointer-events:auto;background:#22d3ee;color:#000;border:none;border-radius:6px;
       width:22px;height:22px;font-size:13px;font-weight:700;cursor:pointer;

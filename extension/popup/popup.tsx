@@ -12,7 +12,7 @@ function render(profile) {
   const entries = Object.entries(profile || {});
   if (entries.length === 0) {
     container.className = "profile empty";
-    container.textContent = "No data yet. Fill a form anywhere and AutoFlow will remember it.";
+    container.textContent = "No data yet. Fill a form anywhere and SmartFill will remember it.";
     return;
   }
   container.className = "profile";
