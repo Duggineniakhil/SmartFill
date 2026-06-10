@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo">⚡ AutoFlow</div>
+      <label class="switch">
+        <input type="checkbox" id="enabled" />
+        <span>Enabled</span>
+      </label>
+    </header>
+
+    <section class="actions">
+      <button id="fillNow" class="primary">Fill this page</button>
+      <label class="row">
+        <input type="checkbox" id="autoFill" />
+        <span>Auto-fill without asking</span>
+      </label>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <span>Profile</span>
+        <button id="clear" class="link">Clear all</button>
+      </div>
+      <div id="profile" class="profile empty">No data yet. Fill a form anywhere and AutoFlow will remember it.</div>
+    </section>
+
+    <section>
+      <div class="section-title"><span>Add / edit</span></div>
+      <div class="add-row">
+        <select id="newKey">
+          <option value="full_name">Full name</option>
+          <option value="first_name">First name</option>
+          <option value="last_name">Last name</option>
+          <option value="email">Email</option>
+          <option value="phone">Phone</option>
+          <option value="college">College</option>
+          <option value="degree">Degree</option>
+          <option value="cgpa">CGPA / GPA</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="github">GitHub</option>
+          <option value="portfolio">Portfolio</option>
+          <option value="address">Address</option>
+          <option value="city">City</option>
+          <option value="country">Country</option>
+          <option value="zip">ZIP / Postal</option>
+          <option value="resume">Resume URL</option>
+        </select>
+        <input id="newVal" placeholder="Value" />
+        <button id="addBtn" class="primary small">Save</button>
+      </div>
+    </section>
+
+    <footer>Privacy-first. Data stays on this device.</footer>
+    <script src="popup.js"></script>
+  </body>
+</html>
