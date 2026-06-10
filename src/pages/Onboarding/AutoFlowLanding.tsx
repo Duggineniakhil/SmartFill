@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import iconUrl from "@/assets/autoflow-icon.png?url";
+import GridScan from "@/components/ui/GridScan";
 
 const STEPS = [
   { n: "01", t: "Fill once", d: "Submit any form — internship app, signup, contact page. SmartFill watches silently." },
@@ -44,15 +45,25 @@ export default function AutoFlowLanding() {
   return (
     <div className="min-h-screen bg-[#0a0a0b] text-zinc-100 selection:bg-cyan-400 selection:text-black">
       {/* grid bg */}
-      <div
-        aria-hidden
-        className="fixed inset-0 opacity-[0.04] pointer-events-none"
-        style={{
-          backgroundImage:
-            "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
-          backgroundSize: "48px 48px",
-        }}
-      />
+      <div className="fixed inset-0 z-0 pointer-events-none opacity-60">
+        <GridScan
+          sensitivity={0.55}
+          lineThickness={1}
+          linesColor="#164e63"
+          gridScale={0.1}
+          scanColor="#22d3ee"
+          scanOpacity={0.4}
+          enablePost
+          bloomIntensity={0.6}
+          chromaticAberration={0.002}
+          noiseIntensity={0.01}
+          lineJitter={0.1}
+          scanGlow={0.5}
+          scanSoftness={2}
+          enableWebcam={false}
+          showPreview={false}
+        />
+      </div>
       <header className="relative max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <img src={iconUrl} alt="" width={28} height={28} className="rounded" />
