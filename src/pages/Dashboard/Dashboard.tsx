@@ -2,10 +2,23 @@ import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import { getProfile, type UserProfile } from "@/services/storage/chromeStorage";
-import { Loader2, Database, Clock, Hash } from "lucide-react";
+import { Loader2, Database, Clock, Hash, TestTube, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
+import { matchField, type MatchResult } from "@/services/autofill/fieldMatcher";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function Dashboard() {
   const { profile, loading } = useAuth();
+  
+  // Tester state
+  const [testInput, setTestInput] = useState({ label: "", placeholder: "", name: "", id: "" });
+  const [matchResult, setMatchResult] = useState<MatchResult>({ canonicalField: null, confidence: 0 });
+
+  useEffect(() => {
+    // Run matcher whenever inputs change
+    const result = matchField(testInput);
+    setMatchResult(result);
+  }, [testInput]);
 
   if (loading) {
     return (
@@ -88,13 +101,118 @@ export default function Dashboard() {
                     {fields.map(([key, value]) => (
                       <tr key={key} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                         <td className="px-3 py-2 text-muted-foreground font-mono text-[12px]">{key}</td>
-                        <td className="px-3 py-2 font-medium">{value}</td>
+                        <td className="px-3 py-2 font-medium">{value as string}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
+
+            {/* Field Matcher Tester */}
+            <div className="mt-12 pt-8 border-t border-border">
+              <div className="flex items-center gap-2 mb-4">
+                <TestTube className="h-5 w-5 text-cyan-400" />
+                <h2 className="text-lg font-medium">Smart Field Detection Tester</h2>
+              </div>
+              <p className="text-[13px] text-muted-foreground mb-6">
+                Type into the fields below to see how the matcher scores and resolves the canonical field.
+              </p>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Inputs */}
+                <div className="space-y-4 p-4 border border-border rounded-md bg-muted/10">
+                  <h3 className="text-[12px] font-medium uppercase tracking-wider text-muted-foreground">Mock Form Input</h3>
+                  <div className="space-y-2">
+                    <Label className="text-[12px]">Label text</Label>
+                    <Input 
+                      placeholder="e.g. Applicant Name" 
+                      value={testInput.label}
+                      onChange={(e) => setTestInput({...testInput, label: e.target.value})}
+                      className="h-8 text-[13px]"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[12px]">Placeholder</Label>
+                    <Input 
+                      placeholder="e.g. Jane Doe" 
+                      value={testInput.placeholder}
+                      onChange={(e) => setTestInput({...testInput, placeholder: e.target.value})}
+                      className="h-8 text-[13px]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-[12px]">Name attribute</Label>
+                      <Input 
+                        placeholder="e.g. first_name" 
+                        value={testInput.name}
+                        onChange={(e) => setTestInput({...testInput, name: e.target.value})}
+                        className="h-8 text-[13px]"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[12px]">ID attribute</Label>
+                      <Input 
+                        placeholder="e.g. input-name" 
+                        value={testInput.id}
+                        onChange={(e) => setTestInput({...testInput, id: e.target.value})}
+                        className="h-8 text-[13px]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Results */}
+                <div className="p-4 border border-border rounded-md bg-muted/10 flex flex-col justify-center">
+                  <h3 className="text-[12px] font-medium uppercase tracking-wider text-muted-foreground mb-4">Detection Result</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-[12px] text-muted-foreground mb-1">Canonical Field</p>
+                      <div className="text-lg font-mono font-medium">
+                        {matchResult.canonicalField ? (
+                          <span className="text-cyan-400">{matchResult.canonicalField}</span>
+                        ) : (
+                          <span className="text-muted-foreground opacity-50">null</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[12px] text-muted-foreground mb-1">Confidence Score</p>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xl font-bold ${
+                          matchResult.confidence >= 0.75 ? "text-green-400" :
+                          matchResult.confidence >= 0.50 ? "text-yellow-400" :
+                          "text-red-400"
+                        }`}>
+                          {(matchResult.confidence * 100).toFixed(0)}%
+                        </span>
+                        
+                        {matchResult.confidence >= 0.75 && <CheckCircle2 className="h-4 w-4 text-green-400" />}
+                        {matchResult.confidence >= 0.50 && matchResult.confidence < 0.75 && <AlertCircle className="h-4 w-4 text-yellow-400" />}
+                        {matchResult.confidence < 0.50 && <XCircle className="h-4 w-4 text-red-400" />}
+                        
+                        <span className="text-[12px] text-muted-foreground ml-2">
+                          {matchResult.confidence >= 0.75 ? "(Autofill)" :
+                           matchResult.confidence >= 0.50 ? "(Suggest)" :
+                           "(Ignore)"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {matchResult.confidence > 0 && (
+                      <div className="pt-2 border-t border-border/50">
+                        <p className="text-[11px] text-muted-foreground">
+                          Matched <span className="text-foreground">"{matchResult.matchedAlias}"</span> via {matchResult.matchSource}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

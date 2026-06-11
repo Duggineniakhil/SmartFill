@@ -22,96 +22,87 @@ const ALIASES = {
 };
 
 const FORBIDDEN = [
-  'password', 'passwd', 'pwd', 'otp', 'one time', 'cvv', 'cvc', 'security code',
-  'card number', 'credit card', 'ssn', 'social security', 'pin', 'verification code',
+  "password", "passwd", "pwd", "otp", "one time", "cvv", "cvc", "security code",
+  "card number", "credit card", "ssn", "social security", "pin", "verification code"
 ];
 
-function normalize(s: string | undefined): string {
-  if (!s) return '';
-  return s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+function normalize(s) {
+  if (!s) return "";
+  return s.toString().toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-interface FieldHints {
-  label: string;
-  placeholder: string;
-  name: string;
-  id: string;
-  ariaLabel: string;
+function isForbidden(el, hints) {
+  if (el && el.type === "password") return true;
+  const blob = normalize(hints.join(" "));
+  return FORBIDDEN.some(k => blob.includes(k));
 }
 
-function isForbidden(el: HTMLElement, hints: FieldHints): boolean {
-  if ((el as HTMLInputElement).type === 'password') return true;
-  const blob = normalize(hints.label + ' ' + hints.ariaLabel + ' ' + hints.placeholder + ' ' + hints.name + ' ' + hints.id);
-  return FORBIDDEN.some((k) => blob.includes(k));
-}
-
-function fieldHints(el: HTMLElement): FieldHints {
-  const hints: FieldHints = { label: '', placeholder: '', name: '', id: '', ariaLabel: '' };
-  if ((el as HTMLInputElement).name) hints.name = (el as HTMLInputElement).name;
+function fieldHints(el) {
+  const hints = { label: "", placeholder: "", name: "", id: "", ariaLabel: "" };
+  if (el.name) hints.name = el.name;
   if (el.id) hints.id = el.id;
-  if ((el as HTMLInputElement).placeholder) hints.placeholder = (el as HTMLInputElement).placeholder;
-  if (el.getAttribute && el.getAttribute('aria-label')) hints.ariaLabel = el.getAttribute('aria-label')!;
-
+  if (el.placeholder) hints.placeholder = el.placeholder;
+  if (el.getAttribute && el.getAttribute("aria-label")) hints.ariaLabel = el.getAttribute("aria-label");
+  
   try {
+    // Find associated label
     if (el.id) {
       const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if (lbl) hints.label += ' ' + (lbl as HTMLElement).innerText;
+      if (lbl) hints.label += " " + lbl.innerText;
     }
-    const parentLabel = el.closest && el.closest('label');
-    if (parentLabel) hints.label += ' ' + (parentLabel as HTMLElement).innerText;
-
-    const labelledBy = el.getAttribute && el.getAttribute('aria-labelledby');
+    const parentLabel = el.closest && el.closest("label");
+    if (parentLabel) hints.label += " " + parentLabel.innerText;
+    
+    // aria-labelledby
+    const labelledBy = el.getAttribute && el.getAttribute("aria-labelledby");
     if (labelledBy) {
       for (const id of labelledBy.split(/\s+/)) {
         const node = document.getElementById(id);
-        if (node) hints.label += ' ' + (node as HTMLElement).innerText;
+        if (node) hints.label += " " + node.innerText;
       }
     }
   } catch (_) {}
-
+  
   return hints;
 }
 
-interface MatchResult {
-  canonicalField: string | null;
-  confidence: number;
-}
-
-function evaluateRules(inputTokens: string[]): MatchResult {
-  let bestMatch: MatchResult = { canonicalField: null, confidence: 0 };
+function evaluateRules(inputTokens) {
+  let bestMatch = { canonicalField: null, confidence: 0 };
 
   for (const [canonicalField, aliases] of Object.entries(ALIASES)) {
     for (const alias of aliases) {
       const normalizedAlias = normalize(alias);
-
+      
       for (const token of inputTokens) {
         if (!token) continue;
-
+        
+        // Exact match
         if (token === normalizedAlias) {
           return { canonicalField, confidence: 0.95 };
         }
 
+        // Partial match
         if (normalizedAlias.length > 3 && token.length > 3) {
           if (token.includes(normalizedAlias) || normalizedAlias.includes(token)) {
-            const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);
-            const confidence = 0.5 + (ratio * 0.3);
-
-            if (confidence > bestMatch.confidence) {
-              bestMatch = { canonicalField, confidence };
-            }
+             const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);
+             const confidence = 0.5 + (ratio * 0.3); // Base 0.5, max 0.8
+             
+             if (confidence > bestMatch.confidence) {
+               bestMatch = { canonicalField, confidence };
+             }
           }
         }
       }
     }
   }
-
   return bestMatch;
 }
 
-function classify(el: HTMLElement): MatchResult {
+function classify(el) {
   const hints = fieldHints(el);
-
-  if (isForbidden(el, hints)) {
+  
+  // Quick forbidden check using all collected text
+  if (isForbidden(el, Object.values(hints))) {
     return { canonicalField: null, confidence: 0 };
   }
 
@@ -123,16 +114,19 @@ function classify(el: HTMLElement): MatchResult {
     id: normalize(hints.id),
   };
 
+  // 1. Label/AriaLabel
   let result = evaluateRules([normalizedSources.label, normalizedSources.ariaLabel]);
   if (result.confidence >= 0.5) return result;
 
+  // 2. Placeholder
   result = evaluateRules([normalizedSources.placeholder]);
   if (result.confidence >= 0.5) return result;
 
+  // 3. Name / ID
   result = evaluateRules([normalizedSources.name, normalizedSources.id]);
   if (result.confidence >= 0.5) return result;
 
   return { canonicalField: null, confidence: 0 };
 }
 
-(window as any).__SMARTFILL__ = { classify, isForbidden, fieldHints, ALIASES };
+window.__SMARTFILL__ = { classify, isForbidden, fieldHints, ALIASES };

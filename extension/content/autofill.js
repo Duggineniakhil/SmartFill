@@ -1,12 +1,11 @@
 // SmartFill content script — capture + autofill
-"use strict";
 (function () {
   const { classify } = window.__SMARTFILL__;
 
   const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select';
 
-  function allFields(root: any = document) {
-    return Array.from(root.querySelectorAll(INPUT_SEL)).filter((el: any) => {
+  function allFields(root = document) {
+    return Array.from(root.querySelectorAll(INPUT_SEL)).filter(el => {
       if (el.disabled || el.readOnly) return false;
       if (el.type === "hidden") return false;
       const r = el.getBoundingClientRect();
@@ -14,41 +13,44 @@
     });
   }
 
-  function captureFrom(root: any) {
-    chrome.storage.local.get(["smartfill_settings", "smartfill_profile"], (data: any) => {
+  // ---- Capture on submit ----
+  function captureFrom(root) {
+    chrome.storage.local.get(["smartfill_settings", "smartfill_profile"], (data) => {
       const settings = data.smartfill_settings || {};
-      if (settings.autoSaveEnabled === false) return;
+      if (settings.autoSaveEnabled === false) return; // Respect auto-save toggle
 
-      const collected: Record<string, string> = {};
+      const collected = {};
       for (const el of allFields(root)) {
         const { canonicalField, confidence } = classify(el);
         const val = (el.value || "").toString().trim();
+        // Only capture high confidence fields to avoid bad data
         if (canonicalField && confidence >= 0.75 && val) {
           collected[canonicalField] = val;
         }
       }
-
+      
       if (Object.keys(collected).length === 0) return;
-
+      
       const existingProfile = data.smartfill_profile || { fields: {} };
       const mergedFields = { ...existingProfile.fields, ...collected };
       const mergedProfile = {
         ...existingProfile,
         fields: mergedFields,
-        updated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
-
+      
       chrome.storage.local.set({ smartfill_profile: mergedProfile });
     });
   }
 
-  document.addEventListener("submit", (e: any) => {
-    try { captureFrom(e.target); } catch (_) {}
+  document.addEventListener("submit", (e) => {
+    try { captureFrom(e.target || document); } catch (_) {}
   }, true);
 
+  // ---- Autofill UI ----
   const BADGE_CLASS = "smartfill-badge";
 
-  function makeBadge(el: any, value: any) {
+  function makeBadge(el, value) {
     if (el.dataset.smartfill === "1") return;
     el.dataset.smartfill = "1";
     const wrap = document.createElement("div");
@@ -59,7 +61,7 @@
     btn.type = "button";
     btn.className = BADGE_CLASS;
     btn.textContent = "⚡";
-    btn.title = `SmartFill: fill "${value}"`;
+    btn.title = `SmartFill Suggestion: Click to fill "${value}"`;
     btn.style.cssText = `
       pointer-events:auto;background:#22d3ee;color:#000;border:none;border-radius:6px;
       width:22px;height:22px;font-size:13px;font-weight:700;cursor:pointer;
@@ -87,10 +89,11 @@
     window.addEventListener("scroll", position, true);
     window.addEventListener("resize", position);
 
+    // Hide badge once user types
     el.addEventListener("input", () => { if (el.value) wrap.remove(); }, { once: true });
   }
 
-  function setNativeValue(el: any, value: any) {
+  function setNativeValue(el, value) {
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype
                 : el.tagName === "SELECT" ? HTMLSelectElement.prototype
                 : HTMLInputElement.prototype;
@@ -102,32 +105,35 @@
   }
 
   function scan() {
-    chrome.storage.local.get(["smartfill_profile", "smartfill_settings"], (data: any) => {
+    chrome.storage.local.get(["smartfill_profile", "smartfill_settings"], (data) => {
       const profileFields = data.smartfill_profile?.fields || {};
       const settings = data.smartfill_settings || { autoFillEnabled: true };
-
+      
       const fields = allFields();
       for (const el of fields) {
         if (el.value) continue;
         if (el.dataset.smartfill === "1") continue;
-
+        
         const { canonicalField, confidence } = classify(el);
-        if (!canonicalField || confidence < 0.50) continue;
-
+        if (!canonicalField || confidence < 0.50) continue; // Ignore < 0.50
+        
         const value = profileFields[canonicalField];
         if (!value) continue;
 
         if (confidence >= 0.75 && settings.autoFillEnabled) {
+          // High confidence -> Autofill automatically
           setNativeValue(el, value);
           el.dataset.smartfill = "1";
         } else {
+          // Medium confidence or AutoFill disabled -> Suggestion Badge
           makeBadge(el, value);
         }
       }
     });
   }
 
-  let scanTimer: any;
+  // Initial + observe DOM changes
+  let scanTimer;
   function scheduleScan() {
     clearTimeout(scanTimer);
     scanTimer = setTimeout(scan, 250);
@@ -136,23 +142,4 @@
   const obs = new MutationObserver(scheduleScan);
   obs.observe(document.documentElement, { childList: true, subtree: true });
 
-  chrome.runtime.onMessage.addListener((msg: any, _s: any, send: any) => {
-    if (msg && msg.type === "SMARTFILL_FILL_NOW") {
-      chrome.storage.local.get(["smartfill_profile"], (data: any) => {
-        const profileFields = data.smartfill_profile?.fields || {};
-        let filled = 0;
-        for (const el of allFields()) {
-          if (el.value) continue;
-          const { canonicalField } = classify(el);
-          if (!canonicalField) continue;
-          const value = profileFields[canonicalField];
-          if (!value) continue;
-          setNativeValue(el, value);
-          filled++;
-        }
-        send({ filled });
-      });
-      return true;
-    }
-  });
 })();
