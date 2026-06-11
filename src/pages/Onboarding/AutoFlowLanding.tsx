@@ -26,7 +26,7 @@ export default function AutoFlowLanding() {
   const download = () => {
     setDownloading(true);
     setErr(null);
-    fetch("/smartfill-extension.zip")
+    fetch("/SmartFill.zip")
       .then((r) => {
         if (!r.ok) throw new Error(`Download failed: ${r.status}`);
         return r.blob();
@@ -34,7 +34,7 @@ export default function AutoFlowLanding() {
       .then((blob) => {
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "smartfill-extension.zip";
+        a.download = "SmartFill.zip";
         a.click();
         URL.revokeObjectURL(a.href);
       })

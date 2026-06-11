@@ -5,16 +5,17 @@
 
   const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select';
 
-  function allFields(root: any = document) {
-    return Array.from(root.querySelectorAll(INPUT_SEL)).filter((el: any) => {
-      if (el.disabled || el.readOnly) return false;
-      if (el.type === "hidden") return false;
+  function allFields(root: ParentNode = document) {
+    return Array.from(root.querySelectorAll(INPUT_SEL) as NodeListOf<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>).filter((el) => {
+      if (el.disabled) return false;
+      if ("readOnly" in el && el.readOnly) return false;
+      if ((el as HTMLInputElement).type === "hidden") return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
     });
   }
 
-  function captureFrom(root: any) {
+  function captureFrom(root: ParentNode) {
     chrome.storage.local.get(["smartfill_settings", "smartfill_profile"], (data: any) => {
       const settings = data.smartfill_settings || {};
       if (settings.autoSaveEnabled === false) return;
@@ -48,7 +49,7 @@
 
   const BADGE_CLASS = "smartfill-badge";
 
-  function makeBadge(el: any, value: any) {
+  function makeBadge(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
     if (el.dataset.smartfill === "1") return;
     el.dataset.smartfill = "1";
     const wrap = document.createElement("div");
@@ -90,7 +91,7 @@
     el.addEventListener("input", () => { if (el.value) wrap.remove(); }, { once: true });
   }
 
-  function setNativeValue(el: any, value: any) {
+  function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype
                 : el.tagName === "SELECT" ? HTMLSelectElement.prototype
                 : HTMLInputElement.prototype;
@@ -103,7 +104,10 @@
 
   function scan() {
     chrome.storage.local.get(["smartfill_profile", "smartfill_settings"], (data: any) => {
-      const profileFields = data.smartfill_profile?.fields || {};
+      const profileFields = {
+        ...(data.profile || {}),
+        ...(data.smartfill_profile?.fields || {}),
+      };
       const settings = data.smartfill_settings || { autoFillEnabled: true };
 
       const fields = allFields();
@@ -137,9 +141,12 @@
   obs.observe(document.documentElement, { childList: true, subtree: true });
 
   chrome.runtime.onMessage.addListener((msg: any, _s: any, send: any) => {
-    if (msg && msg.type === "SMARTFILL_FILL_NOW") {
-      chrome.storage.local.get(["smartfill_profile"], (data: any) => {
-        const profileFields = data.smartfill_profile?.fields || {};
+    if (msg && (msg.type === "SMARTFILL_FILL_NOW" || msg.type === "AUTOFLOW_FILL_NOW")) {
+      chrome.storage.local.get(["profile", "smartfill_profile"], (data: any) => {
+        const profileFields = {
+          ...(data.profile || {}),
+          ...(data.smartfill_profile?.fields || {}),
+        };
         let filled = 0;
         for (const el of allFields()) {
           if (el.value) continue;

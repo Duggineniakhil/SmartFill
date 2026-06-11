@@ -64,9 +64,13 @@ Follow these steps to set up the project locally for development.
 
 ### Loading the Extension in Chrome
 
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable **Developer mode** in the top right corner.
-3. Click **Load unpacked** and select the `extension` folder.
+1. Download `SmartFill.zip` from the dashboard.
+2. Unzip it somewhere you’ll remember. You should see a folder containing `manifest.json`, `background/`, `content/`, `icons/`, and `popup/`.
+3. Open Chrome and navigate to `chrome://extensions/`
+4. Enable **Developer mode** in the top right corner.
+5. Click **Load unpacked** and select the *unzipped folder* (the one that contains `manifest.json`).
+
+> **Note:** If you see “Manifest file is missing or unreadable,” you probably selected the wrong folder — make sure it’s the folder that directly contains `manifest.json`, not the Downloads folder or the project root.
 
 ## Project Structure
 

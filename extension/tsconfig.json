@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "ES2022",
     "lib": ["ES2023", "DOM"],
-    "outDir": "./dist",
+    "outDir": ".",
     "rootDir": ".",
     "strict": false,
     "noImplicitAny": false,
@@ -18,6 +18,6 @@
     "sourceMap": true,
     "esModuleInterop": true
   },
-  "include": ["content/**/*.ts", "content/**/*.js", "content/**/*.d.ts"],
+  "include": ["content/**/*.ts", "content/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }
