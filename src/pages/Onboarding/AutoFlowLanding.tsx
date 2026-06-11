@@ -128,11 +128,11 @@ export default function AutoFlowLanding() {
               </span>
             </div>
             <div className="p-6 space-y-4">
-              <MockField label="Applicant Name" value="Akhil Reddy" filled />
-              <MockField label="Personal Email" value="akhil@gmail.com" filled />
-              <MockField label="Mobile Number" value="9032855330" filled />
-              <MockField label="University" value="Amrita" filled />
-              <MockField label="Current GPA" value="8.4" badge />
+              <MockField label="Applicant Name" value="Jane Doe" filled />
+              <MockField label="Personal Email" value="jane@example.com" filled />
+              <MockField label="Mobile Number" value="555-0123" filled />
+              <MockField label="University" value="State University" filled />
+              <MockField label="Current GPA" value="3.8" badge />
               <MockField label="LinkedIn Profile" value="" placeholder="linkedin.com/in/…" badge />
             </div>
           </div>

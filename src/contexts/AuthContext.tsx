@@ -1,92 +1,71 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { User, Session } from "@supabase/supabase-js";
-import { supabase } from "@/services/supabase/client";
-import type { Tables } from "@/services/supabase/types";
-
-type Profile = Tables<"profiles">;
+import {
+  getProfile,
+  saveProfile,
+  updateProfile,
+  deleteProfile,
+  getSettings,
+  saveSettings,
+  type UserProfile,
+  type AppSettings,
+} from "@/services/storage/chromeStorage";
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  profile: Profile | null;
+  profile: UserProfile | null;
+  settings: AppSettings;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
-  signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  updateUserProfile: (partial: Partial<UserProfile>) => Promise<void>;
+  clearAllData: () => Promise<void>;
+  updateSettings: (settings: AppSettings) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [settings, setSettingsState] = useState<AppSettings>({
+    theme: "dark",
+    autoFillEnabled: true,
+    autoSaveEnabled: true,
+  });
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-    setProfile(data);
+  const loadData = async () => {
+    const [p, s] = await Promise.all([getProfile(), getSettings()]);
+    setProfile(p);
+    setSettingsState(s);
+    setLoading(false);
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          setTimeout(() => fetchProfile(session.user.id), 0);
-        } else {
-          setProfile(null);
-        }
-        setLoading(false);
-      }
-    );
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfile(session.user.id);
-      }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    loadData();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName },
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    if (error) throw error;
-  };
-
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
-
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-  };
-
   const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id);
+    const p = await getProfile();
+    setProfile(p);
+  };
+
+  const updateUserProfile = async (partial: Partial<UserProfile>) => {
+    await updateProfile(partial);
+    await refreshProfile();
+  };
+
+  const clearAllData = async () => {
+    await deleteProfile();
+    setProfile(null);
+  };
+
+  const updateSettings = async (newSettings: AppSettings) => {
+    await saveSettings(newSettings);
+    setSettingsState(newSettings);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider
+      value={{ profile, settings, loading, refreshProfile, updateUserProfile, clearAllData, updateSettings }}
+    >
       {children}
     </AuthContext.Provider>
   );
