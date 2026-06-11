@@ -1,28 +1,15 @@
-import { LayoutDashboard, Plus, Bug, BarChart3, Settings, LogOut, Search } from "lucide-react";
+import { LayoutDashboard, Settings } from "lucide-react";
 import { StackedLogo } from "@/components/profile/StackedLogo";
 import { Link, useLocation } from "react-router-dom";
-import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/contexts/AuthContext";
-
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 
 export const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
-  { icon: Plus, label: "Report Bug", path: "/bugs/new" },
-  { icon: Bug, label: "All Bugs", path: "/bugs" },
-  { icon: BarChart3, label: "Analytics", path: "/analytics" },
+  { icon: LayoutDashboard, label: "Home", path: "/dashboard" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 
 export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) {
   const location = useLocation();
-  const { profile, signOut } = useAuth();
-
-  const initials = profile?.full_name
-    ? profile.full_name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
-    : "U";
 
   return (
     <>
@@ -39,7 +26,7 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
       {/* Nav */}
       <nav className="flex-1 py-1.5 px-1.5 space-y-px">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path || 
+          const isActive = location.pathname === item.path ||
             (item.path !== "/" && location.pathname.startsWith(item.path));
           return (
             <Link
@@ -63,26 +50,9 @@ export function SidebarContent({ collapsed = false, onNavigate }: { collapsed?: 
       {/* Footer */}
       <div className="border-t border-sidebar-border p-2">
         <div className="flex items-center gap-2 px-1">
-          <Avatar className="h-5 w-5">
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground text-[9px] leading-none">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          {!collapsed && (
-            <span className="text-[12px] text-sidebar-foreground truncate flex-1">
-              {profile?.full_name || "User"}
-            </span>
-          )}
-          {!collapsed && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={signOut}
-              className="text-sidebar-foreground hover:bg-sidebar-accent h-6 w-6"
-            >
-              <LogOut className="h-3 w-3" />
-            </Button>
-          )}
+          <span className="text-[11px] text-sidebar-foreground opacity-50">
+            Local-first · No account needed
+          </span>
         </div>
       </div>
     </>

@@ -5,12 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
-import Auth from "./pages/Auth/Auth";
-import Index from "./pages/Onboarding/Index";
 import AutoFlowLanding from "./pages/Onboarding/AutoFlowLanding";
 import Dashboard from "./pages/Dashboard/Dashboard";
-import Analytics from "./pages/Dashboard/Analytics";
 import Settings from "./pages/Settings/Settings";
 import NotFound from "./pages/Onboarding/NotFound";
 
@@ -25,12 +21,9 @@ const App = () => (
         <BrowserRouter>
           <AuthProvider>
             <Routes>
-              <Route path="/auth" element={<Auth />} />
               <Route path="/" element={<AutoFlowLanding />} />
-              <Route path="/triage" element={<Index />} />
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>
