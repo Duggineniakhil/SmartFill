@@ -31,6 +31,27 @@ function normalize(s: string | undefined): string {
   return s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+const COMMON_PLACEHOLDERS = new Set([
+  'your answer',
+  'short answer',
+  'paragraph answer',
+  'select an option',
+  'choose',
+  'choose an option',
+  'answer',
+  'optional',
+]);
+
+function isCommonPlaceholder(text: string): boolean {
+  return COMMON_PLACEHOLDERS.has(normalize(text));
+}
+
+function addTextHint(target: FieldHints, text: string | null | undefined) {
+  if (!text) return;
+  if (isCommonPlaceholder(text)) return;
+  target.label += ' ' + text;
+}
+
 interface FieldHints {
   label: string;
   placeholder: string;
@@ -55,16 +76,16 @@ function fieldHints(el: HTMLElement): FieldHints {
   try {
     if (el.id) {
       const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if (lbl) hints.label += ' ' + (lbl as HTMLElement).innerText;
+      if (lbl) addTextHint(hints, (lbl as HTMLElement).innerText);
     }
     const parentLabel = el.closest && el.closest('label');
-    if (parentLabel) hints.label += ' ' + (parentLabel as HTMLElement).innerText;
+    if (parentLabel) addTextHint(hints, (parentLabel as HTMLElement).innerText);
 
     const labelledBy = el.getAttribute && el.getAttribute('aria-labelledby');
     if (labelledBy) {
       for (const id of labelledBy.split(/\s+/)) {
         const node = document.getElementById(id);
-        if (node) hints.label += ' ' + (node as HTMLElement).innerText;
+        if (node) addTextHint(hints, (node as HTMLElement).innerText);
       }
     }
 
@@ -72,18 +93,33 @@ function fieldHints(el: HTMLElement): FieldHints {
     if (describedBy) {
       for (const id of describedBy.split(/\s+/)) {
         const node = document.getElementById(id);
-        if (node) hints.label += ' ' + (node as HTMLElement).innerText;
+        if (node) addTextHint(hints, (node as HTMLElement).innerText);
       }
     }
 
-    const container = el.closest && el.closest('[role="listitem"], [role="group"], .freebirdFormviewerComponentsQuestionBaseRoot, .quantumWizTextinputPaperinputMain, .appsMaterialWizTextinputPaperinputMain, fieldset, .form-group, .field, li, .question');
-    if (container) {
-      const heading = container.querySelector('[role="heading"], h1, h2, h3, h4, h5, h6, legend, .question-title, .freebirdFormviewerComponentsQuestionBaseTitle');
-      if (heading) hints.label += ' ' + (heading as HTMLElement).innerText;
-      if (container.classList && container.classList.contains('freebirdFormviewerComponentsQuestionBaseRoot')) {
-        const text = container.querySelector('.freebirdFormviewerComponentsQuestionBaseTitle, .freebirdFormviewerComponentsQuestionBaseText');
-        if (text) hints.label += ' ' + (text as HTMLElement).innerText;
+    let container: HTMLElement | null = el;
+    for (let depth = 0; depth < 5 && container; depth += 1) {
+      if (container !== el) {
+        if (container.getAttribute('aria-labelledby')) {
+          for (const id of container.getAttribute('aria-labelledby')!.split(/\s+/)) {
+            const node = document.getElementById(id);
+            if (node) addTextHint(hints, (node as HTMLElement).innerText);
+          }
+        }
+        if (container.getAttribute('aria-label')) {
+          addTextHint(hints, container.getAttribute('aria-label'));
+        }
       }
+
+      const heading = container.querySelector('[role="heading"], h1, h2, h3, h4, h5, h6, legend, .question-title, .freebirdFormviewerComponentsQuestionBaseTitle, .freebirdFormviewerComponentsQuestionBaseText, .M7eMe');
+      if (heading) addTextHint(hints, (heading as HTMLElement).innerText);
+
+      const childTexts = Array.from(container.querySelectorAll('label, legend, [role="heading"], [aria-level], .question-title, .freebirdFormviewerComponentsQuestionBaseTitle, .freebirdFormviewerComponentsQuestionBaseText, .M7eMe')) as HTMLElement[];
+      for (const node of childTexts) {
+        addTextHint(hints, node.innerText);
+      }
+
+      container = container.parentElement;
     }
   } catch (_) {}
 
