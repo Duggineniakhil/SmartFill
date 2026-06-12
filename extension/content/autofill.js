@@ -2,7 +2,7 @@
 "use strict";
 (function () {
     const { classify } = window.__SMARTFILL__;
-    const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select';
+    const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select, div[role="textbox"], div[contenteditable="true"], div[aria-haspopup="listbox"], [data-key="entry."], .quantumWizTextinputPaperinputMain, .appsMaterialWizTextinputPaperinputMain, .quantumWizToggleCheckbox, .freebirdFormviewerWidgetItem';
     function allFields(root = document) {
         return Array.from(root.querySelectorAll(INPUT_SEL)).filter((el) => {
             if (el.disabled)
@@ -23,7 +23,7 @@
             const collected = {};
             for (const el of allFields(root)) {
                 const { canonicalField, confidence } = classify(el);
-                const val = (el.value || "").toString().trim();
+                const val = (el.value || el.innerText || el.textContent || "").toString().trim();
                 if (canonicalField && confidence >= 0.75 && val) {
                     collected[canonicalField] = val;
                 }
@@ -92,10 +92,22 @@
         catch (_) { }
         window.addEventListener("scroll", position, true);
         window.addEventListener("resize", position);
-        el.addEventListener("input", () => { if (el.value)
+        el.addEventListener("input", () => { if (el.value || el.innerText || el.textContent)
             wrap.remove(); }, { once: true });
     }
     function setNativeValue(el, value) {
+        if (el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('role') === 'textbox') {
+            el.focus();
+            el.innerText = value;
+            el.textContent = value;
+            el.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "v" }));
+            el.dispatchEvent(new KeyboardEvent("keypress", { bubbles: true, key: "v" }));
+            el.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, key: "v" }));
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+            el.blur();
+            return;
+        }
         const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype
             : el.tagName === "SELECT" ? HTMLSelectElement.prototype
                 : HTMLInputElement.prototype;
@@ -116,7 +128,7 @@
             const settings = data.smartfill_settings || { autoFillEnabled: true };
             const fields = allFields();
             for (const el of fields) {
-                if (el.value)
+                if (el.value || el.innerText || el.textContent)
                     continue;
                 if (el.dataset.smartfill === "1")
                     continue;
@@ -153,7 +165,7 @@
                 };
                 let filled = 0;
                 for (const el of allFields()) {
-                    if (el.value)
+                    if (el.value || el.innerText || el.textContent)
                         continue;
                     const { canonicalField } = classify(el);
                     if (!canonicalField)

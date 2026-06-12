@@ -71,7 +71,11 @@ $("fillNow").addEventListener("click", async () => {
   chrome.tabs.sendMessage(tab.id, { type: "SMARTFILL_FILL_NOW" }, (res) => {
     const btn = $("fillNow");
     const txt = btn.textContent;
-    btn.textContent = res ? `Filled ${res.filled} field${res.filled === 1 ? "" : "s"}` : "Open a webpage to fill";
+    if (chrome.runtime.lastError) {
+      btn.textContent = "Open a webpage to fill";
+    } else {
+      btn.textContent = res ? `Filled ${res.filled} field${res.filled === 1 ? "" : "s"}` : "Open a webpage to fill";
+    }
     setTimeout(() => (btn.textContent = txt), 1600);
   });
 });

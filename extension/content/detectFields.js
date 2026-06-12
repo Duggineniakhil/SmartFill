@@ -61,6 +61,25 @@ function fieldHints(el) {
                     hints.label += ' ' + node.innerText;
             }
         }
+        const describedBy = el.getAttribute && el.getAttribute('aria-describedby');
+        if (describedBy) {
+            for (const id of describedBy.split(/\s+/)) {
+                const node = document.getElementById(id);
+                if (node)
+                    hints.label += ' ' + node.innerText;
+            }
+        }
+        const container = el.closest && el.closest('[role="listitem"], [role="group"], .freebirdFormviewerComponentsQuestionBaseRoot, .quantumWizTextinputPaperinputMain, .appsMaterialWizTextinputPaperinputMain, fieldset, .form-group, .field, li, .question');
+        if (container) {
+            const heading = container.querySelector('[role="heading"], h1, h2, h3, h4, h5, h6, legend, .question-title, .freebirdFormviewerComponentsQuestionBaseTitle');
+            if (heading)
+                hints.label += ' ' + heading.innerText;
+            if (container.classList && container.classList.contains('freebirdFormviewerComponentsQuestionBaseRoot')) {
+                const text = container.querySelector('.freebirdFormviewerComponentsQuestionBaseTitle, .freebirdFormviewerComponentsQuestionBaseText');
+                if (text)
+                    hints.label += ' ' + text.innerText;
+            }
+        }
     }
     catch (_) { }
     return hints;
