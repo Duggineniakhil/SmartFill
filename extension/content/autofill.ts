@@ -3,16 +3,22 @@
 (function () {
   const { classify } = window.__SMARTFILL__;
 
-  const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select, div[role="textbox"], div[contenteditable="true"], div[aria-haspopup="listbox"], [data-key="entry."], .quantumWizTextinputPaperinputMain, .appsMaterialWizTextinputPaperinputMain, .quantumWizToggleCheckbox, .freebirdFormviewerWidgetItem';
+  const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea, select, [role="textbox"], [contenteditable="true"]';
 
   function allFields(root: ParentNode = document) {
-    return Array.from(root.querySelectorAll(INPUT_SEL) as NodeListOf<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>).filter((el) => {
-      if (el.disabled) return false;
-      if ("readOnly" in el && el.readOnly) return false;
+    return Array.from(root.querySelectorAll(INPUT_SEL) as NodeListOf<HTMLElement>).filter((el) => {
+      const control = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      if (control.disabled) return false;
+      if ("readOnly" in control && control.readOnly) return false;
       if ((el as HTMLInputElement).type === "hidden") return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
     });
+  }
+
+  function fieldValue(el: HTMLElement): string {
+    if ("value" in el) return String((el as HTMLInputElement).value || "").trim();
+    return String(el.innerText || el.textContent || "").trim();
   }
 
   function captureFrom(root: ParentNode) {
@@ -23,7 +29,7 @@
       const collected: Record<string, string> = {};
       for (const el of allFields(root)) {
         const { canonicalField, confidence } = classify(el);
-        const val = (el.value || el.innerText || el.textContent || "").toString().trim();
+        const val = fieldValue(el);
         if (canonicalField && confidence >= 0.75 && val) {
           collected[canonicalField] = val;
         }
@@ -49,7 +55,7 @@
 
   const BADGE_CLASS = "smartfill-badge";
 
-  function makeBadge(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
+  function makeBadge(el: HTMLElement, value: string) {
     if (el.dataset.smartfill === "1") return;
     el.dataset.smartfill = "1";
     const wrap = document.createElement("div");
@@ -88,7 +94,7 @@
     window.addEventListener("scroll", position, true);
     window.addEventListener("resize", position);
 
-    el.addEventListener("input", () => { if (el.value || el.innerText || el.textContent) wrap.remove(); }, { once: true });
+    el.addEventListener("input", () => { if (fieldValue(el)) wrap.remove(); }, { once: true });
   }
 
   function setNativeValue(el: any, value: string) {
@@ -121,7 +127,7 @@
 
       const fields = allFields();
       for (const el of fields) {
-          if (el.value || el.innerText || el.textContent) continue;
+        if (fieldValue(el)) continue;
         if (el.dataset.smartfill === "1") continue;
 
         const { canonicalField, confidence } = classify(el);
@@ -157,13 +163,15 @@
         const profileFields = data.smartfill_profile?.fields || {};
         let filled = 0;
         for (const el of allFields()) {
-        if (el.value || el.innerText || el.textContent) continue;
+          if (fieldValue(el)) continue;
           const { canonicalField } = classify(el);
           if (!canonicalField) continue;
           const value = profileFields[canonicalField];
           if (!value) continue;
-          setNativeValue(el, value);
-          filled++;
+          try {
+            setNativeValue(el, value);
+            filled++;
+          } catch (_) {}
         }
         send({ filled });
       });

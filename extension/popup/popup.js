@@ -68,16 +68,37 @@ $("clear").addEventListener("click", () => {
 $("fillNow").addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) return;
-  chrome.tabs.sendMessage(tab.id, { type: "SMARTFILL_FILL_NOW" }, (res) => {
-    const btn = $("fillNow");
-    const txt = btn.textContent;
-    if (chrome.runtime.lastError) {
-      btn.textContent = "Open a webpage to fill";
-    } else {
-      btn.textContent = res ? `Filled ${res.filled} field${res.filled === 1 ? "" : "s"}` : "Open a webpage to fill";
-    }
+  const btn = $("fillNow");
+  const txt = btn.textContent;
+
+  const showResult = (res) => {
+    const filled = res?.filled || 0;
+    btn.textContent = `Filled ${filled} field${filled === 1 ? "" : "s"}`;
     setTimeout(() => (btn.textContent = txt), 1600);
+  };
+
+  const sendFillRequest = () => new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tab.id, { type: "SMARTFILL_FILL_NOW" }, (res) => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(error);
+      else resolve(res);
+    });
   });
+
+  try {
+    showResult(await sendFillRequest());
+  } catch (_) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content/detectFields.js", "content/autofill.js"],
+      });
+      showResult(await sendFillRequest());
+    } catch (_) {
+      btn.textContent = "Cannot fill this page";
+      setTimeout(() => (btn.textContent = txt), 1600);
+    }
+  }
 });
 
 load();

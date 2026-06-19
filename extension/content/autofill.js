@@ -2,18 +2,24 @@
 "use strict";
 (function () {
     const { classify } = window.__SMARTFILL__;
-    const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]), textarea, select, div[role="textbox"], div[contenteditable="true"], div[aria-haspopup="listbox"], [data-key="entry."], .quantumWizTextinputPaperinputMain, .appsMaterialWizTextinputPaperinputMain, .quantumWizToggleCheckbox, .freebirdFormviewerWidgetItem';
+    const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea, select, [role="textbox"], [contenteditable="true"]';
     function allFields(root = document) {
         return Array.from(root.querySelectorAll(INPUT_SEL)).filter((el) => {
-            if (el.disabled)
+            const control = el;
+            if (control.disabled)
                 return false;
-            if ("readOnly" in el && el.readOnly)
+            if ("readOnly" in control && control.readOnly)
                 return false;
             if (el.type === "hidden")
                 return false;
             const r = el.getBoundingClientRect();
             return r.width > 0 && r.height > 0;
         });
+    }
+    function fieldValue(el) {
+        if ("value" in el)
+            return String(el.value || "").trim();
+        return String(el.innerText || el.textContent || "").trim();
     }
     function captureFrom(root) {
         chrome.storage.local.get(["smartfill_settings", "smartfill_profile"], (data) => {
@@ -23,7 +29,7 @@
             const collected = {};
             for (const el of allFields(root)) {
                 const { canonicalField, confidence } = classify(el);
-                const val = (el.value || el.innerText || el.textContent || "").toString().trim();
+                const val = fieldValue(el);
                 if (canonicalField && confidence >= 0.75 && val) {
                     collected[canonicalField] = val;
                 }
@@ -92,7 +98,7 @@
         catch (_) { }
         window.addEventListener("scroll", position, true);
         window.addEventListener("resize", position);
-        el.addEventListener("input", () => { if (el.value || el.innerText || el.textContent)
+        el.addEventListener("input", () => { if (fieldValue(el))
             wrap.remove(); }, { once: true });
     }
     function setNativeValue(el, value) {
@@ -125,7 +131,7 @@
             const settings = data.smartfill_settings || { autoFillEnabled: true };
             const fields = allFields();
             for (const el of fields) {
-                if (el.value || el.innerText || el.textContent)
+                if (fieldValue(el))
                     continue;
                 if (el.dataset.smartfill === "1")
                     continue;
@@ -161,7 +167,7 @@
                 const profileFields = data.smartfill_profile?.fields || {};
                 let filled = 0;
                 for (const el of allFields()) {
-                    if (el.value || el.innerText || el.textContent)
+                    if (fieldValue(el))
                         continue;
                     const { canonicalField } = classify(el);
                     if (!canonicalField)
@@ -169,8 +175,11 @@
                     const value = profileFields[canonicalField];
                     if (!value)
                         continue;
-                    setNativeValue(el, value);
-                    filled++;
+                    try {
+                        setNativeValue(el, value);
+                        filled++;
+                    }
+                    catch (_) { }
                 }
                 send({ filled });
             });

@@ -46,7 +46,16 @@ function addTextHint(target, text) {
         return;
     if (isCommonPlaceholder(text))
         return;
-    target.label += ' ' + text;
+    const candidate = text.trim();
+    if (!candidate)
+        return;
+    const existing = target.label.split('\n').map(normalize);
+    if (!existing.includes(normalize(candidate))) {
+        target.label += (target.label ? '\n' : '') + candidate;
+    }
+}
+function elementText(node) {
+    return (node.innerText || node.textContent || '').trim();
 }
 function isForbidden(el, hints) {
     if (el.type === 'password')
@@ -68,17 +77,17 @@ function fieldHints(el) {
         if (el.id) {
             const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
             if (lbl)
-                addTextHint(hints, lbl.innerText);
+                addTextHint(hints, elementText(lbl));
         }
         const parentLabel = el.closest && el.closest('label');
         if (parentLabel)
-            addTextHint(hints, parentLabel.innerText);
+            addTextHint(hints, elementText(parentLabel));
         const labelledBy = el.getAttribute && el.getAttribute('aria-labelledby');
         if (labelledBy) {
             for (const id of labelledBy.split(/\s+/)) {
                 const node = document.getElementById(id);
                 if (node)
-                    addTextHint(hints, node.innerText);
+                    addTextHint(hints, elementText(node));
             }
         }
         const describedBy = el.getAttribute && el.getAttribute('aria-describedby');
@@ -86,7 +95,7 @@ function fieldHints(el) {
             for (const id of describedBy.split(/\s+/)) {
                 const node = document.getElementById(id);
                 if (node)
-                    addTextHint(hints, node.innerText);
+                    addTextHint(hints, elementText(node));
             }
         }
         let container = el;
@@ -96,7 +105,7 @@ function fieldHints(el) {
                     for (const id of container.getAttribute('aria-labelledby').split(/\s+/)) {
                         const node = document.getElementById(id);
                         if (node)
-                            addTextHint(hints, node.innerText);
+                            addTextHint(hints, elementText(node));
                     }
                 }
                 if (container.getAttribute('aria-label')) {
@@ -105,11 +114,15 @@ function fieldHints(el) {
             }
             const heading = container.querySelector('[role="heading"], h1, h2, h3, h4, h5, h6, legend, .question-title, .freebirdFormviewerComponentsQuestionBaseTitle, .freebirdFormviewerComponentsQuestionBaseText, .M7eMe');
             if (heading)
-                addTextHint(hints, heading.innerText);
+                addTextHint(hints, elementText(heading));
             const childTexts = Array.from(container.querySelectorAll('label, legend, [role="heading"], [aria-level], .question-title, .freebirdFormviewerComponentsQuestionBaseTitle, .freebirdFormviewerComponentsQuestionBaseText, .M7eMe'));
             for (const node of childTexts) {
-                addTextHint(hints, node.innerText);
+                addTextHint(hints, elementText(node));
             }
+            // The nearest labelled container owns this field. Going higher can mix in
+            // labels from sibling questions, which is common in Google Forms.
+            if (heading || childTexts.length > 0)
+                break;
             container = container.parentElement;
         }
     }
@@ -147,13 +160,13 @@ function classify(el) {
         return { canonicalField: null, confidence: 0 };
     }
     const normalizedSources = {
-        label: normalize(hints.label),
+        labels: hints.label.split('\n').map(normalize).filter(Boolean),
         ariaLabel: normalize(hints.ariaLabel),
         placeholder: normalize(hints.placeholder),
         name: normalize(hints.name),
         id: normalize(hints.id),
     };
-    let result = evaluateRules([normalizedSources.label, normalizedSources.ariaLabel]);
+    let result = evaluateRules([...normalizedSources.labels, normalizedSources.ariaLabel]);
     if (result.confidence >= 0.5)
         return result;
     result = evaluateRules([normalizedSources.placeholder]);
