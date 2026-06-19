@@ -121,10 +121,7 @@
     }
     function scan() {
         chrome.storage.local.get(["smartfill_profile", "smartfill_settings"], (data) => {
-            const profileFields = {
-                ...(data.profile || {}),
-                ...(data.smartfill_profile?.fields || {}),
-            };
+            const profileFields = data.smartfill_profile?.fields || {};
             const settings = data.smartfill_settings || { autoFillEnabled: true };
             const fields = allFields();
             for (const el of fields) {
@@ -138,9 +135,11 @@
                 const value = profileFields[canonicalField];
                 if (!value)
                     continue;
-                if (confidence >= 0.75 && settings.autoFillEnabled) {
-                    setNativeValue(el, value);
-                    el.dataset.smartfill = "1";
+                if (confidence >= 0.75) {
+                    if (settings.autoFillEnabled) {
+                        setNativeValue(el, value);
+                        el.dataset.smartfill = "1";
+                    }
                 }
                 else {
                     makeBadge(el, value);
@@ -157,12 +156,9 @@
     const obs = new MutationObserver(scheduleScan);
     obs.observe(document.documentElement, { childList: true, subtree: true });
     chrome.runtime.onMessage.addListener((msg, _s, send) => {
-        if (msg && (msg.type === "SMARTFILL_FILL_NOW" || msg.type === "AUTOFLOW_FILL_NOW")) {
-            chrome.storage.local.get(["profile", "smartfill_profile"], (data) => {
-                const profileFields = {
-                    ...(data.profile || {}),
-                    ...(data.smartfill_profile?.fields || {}),
-                };
+        if (msg?.type === "SMARTFILL_FILL_NOW") {
+            chrome.storage.local.get("smartfill_profile", (data) => {
+                const profileFields = data.smartfill_profile?.fields || {};
                 let filled = 0;
                 for (const el of allFields()) {
                     if (el.value || el.innerText || el.textContent)
