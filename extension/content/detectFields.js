@@ -18,6 +18,8 @@ const ALIASES = {
     degree: ['degree', 'qualification', 'major', 'program of study'],
     graduation_year: ['graduation year', 'grad year', 'class of', 'year of graduation'],
     skills: ['skills', 'core competencies', 'technical skills', 'technologies'],
+    resume: ['resume', 'cv', 'resume link', 'cv link', 'resume drive link', 'upload the resume', 'curriculum vitae'],
+    cgpa: ['cgpa', 'gpa', 'grades', 'grade point average', 'gpa score'],
 };
 const FORBIDDEN = [
     'password', 'passwd', 'pwd', 'otp', 'one time', 'cvv', 'cvc', 'security code',
@@ -119,8 +121,6 @@ function fieldHints(el) {
             for (const node of childTexts) {
                 addTextHint(hints, elementText(node));
             }
-            // The nearest labelled container owns this field. Going higher can mix in
-            // labels from sibling questions, which is common in Google Forms.
             if (heading || childTexts.length > 0)
                 break;
             container = container.parentElement;
@@ -139,6 +139,14 @@ function evaluateRules(inputTokens) {
                     continue;
                 if (token === normalizedAlias) {
                     return { canonicalField, confidence: 0.95 };
+                }
+                const escapedAlias = normalizedAlias.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
+                if (wordRegex.test(token)) {
+                    const confidence = 0.85;
+                    if (confidence > bestMatch.confidence) {
+                        bestMatch = { canonicalField, confidence };
+                    }
                 }
                 if (normalizedAlias.length > 3 && token.length > 3) {
                     if (token.includes(normalizedAlias) || normalizedAlias.includes(token)) {

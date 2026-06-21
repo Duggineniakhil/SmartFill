@@ -21,6 +21,22 @@
     return String(el.innerText || el.textContent || "").trim();
   }
 
+  function getProfileValue(profileFields: Record<string, string>, key: string): string | undefined {
+    if (profileFields[key]) return profileFields[key];
+    const synonyms: Record<string, string[]> = {
+      university: ["college", "school"],
+      postal_code: ["zip", "zip_code"],
+      skills: ["resume"],
+      resume: ["skills"],
+      cgpa: ["gpa"],
+    };
+    const list = synonyms[key] || [];
+    for (const syn of list) {
+      if (profileFields[syn]) return profileFields[syn];
+    }
+    return undefined;
+  }
+
   function captureFrom(root: ParentNode) {
     chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data: any) => {
       const settings = data.smartfill_settings || {};
@@ -137,7 +153,7 @@
         const { canonicalField, confidence } = classify(el);
         if (!canonicalField || confidence < 0.50) continue;
 
-        const value = profileFields[canonicalField];
+        const value = getProfileValue(profileFields, canonicalField);
         if (!value) continue;
 
         if (confidence >= 0.75) {
@@ -170,7 +186,7 @@
           if (fieldValue(el)) continue;
           const { canonicalField } = classify(el);
           if (!canonicalField) continue;
-          const value = profileFields[canonicalField];
+          const value = getProfileValue(profileFields, canonicalField);
           if (!value) continue;
           try {
             setNativeValue(el, value);

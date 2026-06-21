@@ -21,6 +21,23 @@
             return String(el.value || "").trim();
         return String(el.innerText || el.textContent || "").trim();
     }
+    function getProfileValue(profileFields, key) {
+        if (profileFields[key])
+            return profileFields[key];
+        const synonyms = {
+            university: ["college", "school"],
+            postal_code: ["zip", "zip_code"],
+            skills: ["resume"],
+            resume: ["skills"],
+            cgpa: ["gpa"],
+        };
+        const list = synonyms[key] || [];
+        for (const syn of list) {
+            if (profileFields[syn])
+                return profileFields[syn];
+        }
+        return undefined;
+    }
     function captureFrom(root) {
         chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data) => {
             const settings = data.smartfill_settings || {};
@@ -144,7 +161,7 @@
                 const { canonicalField, confidence } = classify(el);
                 if (!canonicalField || confidence < 0.50)
                     continue;
-                const value = profileFields[canonicalField];
+                const value = getProfileValue(profileFields, canonicalField);
                 if (!value)
                     continue;
                 if (confidence >= 0.75) {
@@ -178,7 +195,7 @@
                     const { canonicalField } = classify(el);
                     if (!canonicalField)
                         continue;
-                    const value = profileFields[canonicalField];
+                    const value = getProfileValue(profileFields, canonicalField);
                     if (!value)
                         continue;
                     try {

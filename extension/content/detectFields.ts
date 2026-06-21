@@ -19,6 +19,8 @@ const ALIASES = {
   degree: ['degree', 'qualification', 'major', 'program of study'],
   graduation_year: ['graduation year', 'grad year', 'class of', 'year of graduation'],
   skills: ['skills', 'core competencies', 'technical skills', 'technologies'],
+  resume: ['resume', 'cv', 'resume link', 'cv link', 'resume drive link', 'upload the resume', 'curriculum vitae'],
+  cgpa: ['cgpa', 'gpa', 'grades', 'grade point average', 'gpa score'],
 };
 
 const FORBIDDEN = [
@@ -154,10 +156,22 @@ function evaluateRules(inputTokens: string[]): MatchResult {
       for (const token of inputTokens) {
         if (!token) continue;
 
+        // 1. Exact match
         if (token === normalizedAlias) {
           return { canonicalField, confidence: 0.95 };
         }
 
+        // 2. Whole word match (e.g. "college" in "college name")
+        const escapedAlias = normalizedAlias.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
+        if (wordRegex.test(token)) {
+          const confidence = 0.85;
+          if (confidence > bestMatch.confidence) {
+            bestMatch = { canonicalField, confidence };
+          }
+        }
+
+        // 3. Substring match fallback
         if (normalizedAlias.length > 3 && token.length > 3) {
           if (token.includes(normalizedAlias) || normalizedAlias.includes(token)) {
             const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);

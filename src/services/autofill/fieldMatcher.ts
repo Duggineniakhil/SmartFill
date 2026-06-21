@@ -34,6 +34,8 @@ const FIELD_ALIASES: Record<string, string[]> = {
   degree: ['degree', 'qualification', 'major', 'program of study'],
   graduation_year: ['graduation year', 'grad year', 'class of', 'year of graduation'],
   skills: ['skills', 'core competencies', 'technical skills', 'technologies'],
+  resume: ['resume', 'cv', 'resume link', 'cv link', 'resume drive link', 'upload the resume', 'curriculum vitae'],
+  cgpa: ['cgpa', 'gpa', 'grades', 'grade point average', 'gpa score'],
 };
 
 // Normalize string for matching
@@ -59,6 +61,16 @@ function evaluateRules(inputTokens: string[]): MatchResult {
         // Exact match
         if (token === normalizedAlias) {
           return { canonicalField, confidence: 0.95, matchedAlias: alias };
+        }
+
+        // Whole word match (e.g. "college" in "college name")
+        const escapedAlias = normalizedAlias.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
+        if (wordRegex.test(token)) {
+          const confidence = 0.85;
+          if (confidence > bestMatch.confidence) {
+            bestMatch = { canonicalField, confidence, matchedAlias: alias };
+          }
         }
 
         // Partial match (e.g., token contains alias or alias contains token)

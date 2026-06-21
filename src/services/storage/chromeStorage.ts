@@ -69,8 +69,28 @@ export async function saveProfile(profile: UserProfile): Promise<void> {
   await storageSet(PROFILE_KEY, { ...profile, updated_at: new Date().toISOString() });
 }
 
+const KEY_MAP: Record<string, string> = {
+  college: "university",
+  zip: "postal_code",
+};
+
+function normalizeProfile(profile: UserProfile | null): UserProfile | null {
+  if (!profile) return null;
+  if (!profile.fields) return profile;
+  const normalizedFields: Record<string, string> = {};
+  for (const [k, v] of Object.entries(profile.fields)) {
+    const canonicalKey = KEY_MAP[k] || k;
+    normalizedFields[canonicalKey] = v;
+  }
+  return {
+    ...profile,
+    fields: normalizedFields,
+  };
+}
+
 export async function getProfile(): Promise<UserProfile | null> {
-  return storageGet<UserProfile>(PROFILE_KEY);
+  const profile = await storageGet<UserProfile>(PROFILE_KEY);
+  return normalizeProfile(profile);
 }
 
 export async function updateProfile(partial: Partial<UserProfile>): Promise<void> {
