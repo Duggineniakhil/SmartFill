@@ -98,7 +98,7 @@ SmartFill was refactored to be a completely offline extension. There is no backe
 - [x] Confidence-based autofill thresholds
 - [ ] Resume parsing
 - [ ] Multiple profiles
-- [ ] Import / Export profiles
+- [x] Import / Export profiles
 - [ ] AI-powered field matching
 - [ ] Cloud sync
 

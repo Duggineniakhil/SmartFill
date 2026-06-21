@@ -22,8 +22,10 @@
   }
 
   function captureFrom(root: ParentNode) {
-    chrome.storage.local.get(["smartfill_settings", "smartfill_profile"], (data: any) => {
+    chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data: any) => {
       const settings = data.smartfill_settings || {};
+      // Respect the global enabled toggle from the popup
+      if (data.enabled === false) return;
       if (settings.autoSaveEnabled === false) return;
 
       const collected: Record<string, string> = {};
@@ -121,9 +123,11 @@
   }
 
   function scan() {
-    chrome.storage.local.get(["smartfill_profile", "smartfill_settings"], (data: any) => {
+    chrome.storage.local.get(["smartfill_profile", "smartfill_settings", "enabled"], (data: any) => {
       const profileFields = data.smartfill_profile?.fields || {};
       const settings = data.smartfill_settings || { autoFillEnabled: true };
+      // Respect the global enabled toggle from the popup
+      if (data.enabled === false) return;
 
       const fields = allFields();
       for (const el of fields) {

@@ -1,8 +1,11 @@
 const LABELS = {
   full_name: "Full name", first_name: "First name", last_name: "Last name",
-  email: "Email", phone: "Phone", college: "College", degree: "Degree",
-  cgpa: "CGPA", linkedin: "LinkedIn", github: "GitHub", portfolio: "Portfolio",
-  address: "Address", city: "City", country: "Country", zip: "ZIP", resume: "Resume"
+  email: "Email", phone: "Phone",
+  university: "University / College", degree: "Degree", graduation_year: "Graduation Year",
+  skills: "Skills",
+  linkedin: "LinkedIn", github: "GitHub", portfolio: "Portfolio / Website",
+  address: "Address", city: "City", state: "State / Province",
+  country: "Country", postal_code: "ZIP / Postal Code",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -36,18 +39,31 @@ function render(profile) {
 }
 
 function load() {
-  chrome.storage.local.get({ profile: {}, smartfill_profile: { fields: {} }, enabled: true, autoFill: false }, (d) => {
-    const mergedProfile = { ...(d.profile || {}), ...((d.smartfill_profile && d.smartfill_profile.fields) || {}) };
-    $("enabled").checked = d.enabled;
-    $("autoFill").checked = d.autoFill;
-    render(mergedProfile);
-  });
+  chrome.storage.local.get(
+    { profile: {}, smartfill_profile: { fields: {} }, enabled: true, autoFill: true, smartfill_settings: { autoFillEnabled: true, autoSaveEnabled: true } },
+    (d) => {
+      const mergedProfile = { ...(d.profile || {}), ...((d.smartfill_profile && d.smartfill_profile.fields) || {}) };
+      $("enabled").checked = d.enabled;
+      // Prefer the canonical smartfill_settings value for consistency with the web app
+      $("autoFill").checked = d.smartfill_settings?.autoFillEnabled ?? d.autoFill;
+      render(mergedProfile);
+    }
+  );
 }
 
 $("enabled").addEventListener("change", (e) =>
   chrome.storage.local.set({ enabled: e.target.checked }));
-$("autoFill").addEventListener("change", (e) =>
-  chrome.storage.local.set({ autoFill: e.target.checked, smartfill_settings: { autoFillEnabled: e.target.checked } }));
+
+$("autoFill").addEventListener("change", (e) => {
+  // Read current settings first so we don't overwrite autoSaveEnabled
+  chrome.storage.local.get({ smartfill_settings: { autoFillEnabled: true, autoSaveEnabled: true } }, (d) => {
+    const currentSettings = d.smartfill_settings || {};
+    chrome.storage.local.set({
+      autoFill: e.target.checked,
+      smartfill_settings: { ...currentSettings, autoFillEnabled: e.target.checked },
+    });
+  });
+});
 
 $("addBtn").addEventListener("click", () => {
   const k = $("newKey").value;

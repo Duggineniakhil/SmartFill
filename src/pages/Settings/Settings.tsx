@@ -34,13 +34,15 @@ export default function Settings() {
 
   // ─── Toggles ────────────────────────────────────────────
   const toggleAutoFill = () => {
-    updateSettings({ ...settings, autoFillEnabled: !settings.autoFillEnabled });
-    toast({ title: settings.autoFillEnabled ? "Auto-fill disabled" : "Auto-fill enabled" });
+    const next = !settings.autoFillEnabled;
+    updateSettings({ ...settings, autoFillEnabled: next });
+    toast({ title: next ? "Auto-fill enabled" : "Auto-fill disabled" });
   };
 
   const toggleAutoSave = () => {
-    updateSettings({ ...settings, autoSaveEnabled: !settings.autoSaveEnabled });
-    toast({ title: settings.autoSaveEnabled ? "Auto-save disabled" : "Auto-save enabled" });
+    const next = !settings.autoSaveEnabled;
+    updateSettings({ ...settings, autoSaveEnabled: next });
+    toast({ title: next ? "Auto-save enabled" : "Auto-save disabled" });
   };
 
   // ─── Export ─────────────────────────────────────────────

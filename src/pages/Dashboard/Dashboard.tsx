@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAuth } from "@/contexts/AuthContext";
-import { getProfile, type UserProfile } from "@/services/storage/chromeStorage";
+
 import { Loader2, Database, Clock, Hash, TestTube, CheckCircle2, AlertCircle, XCircle } from "lucide-react";
 import { matchField, type MatchResult } from "@/services/autofill/fieldMatcher";
 import { Input } from "@/components/ui/input";

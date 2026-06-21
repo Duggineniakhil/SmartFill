@@ -22,8 +22,11 @@
         return String(el.innerText || el.textContent || "").trim();
     }
     function captureFrom(root) {
-        chrome.storage.local.get(["smartfill_settings", "smartfill_profile"], (data) => {
+        chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data) => {
             const settings = data.smartfill_settings || {};
+            // Respect the global enabled toggle from the popup
+            if (data.enabled === false)
+                return;
             if (settings.autoSaveEnabled === false)
                 return;
             const collected = {};
@@ -126,9 +129,12 @@
         el.dispatchEvent(new Event("change", { bubbles: true }));
     }
     function scan() {
-        chrome.storage.local.get(["smartfill_profile", "smartfill_settings"], (data) => {
+        chrome.storage.local.get(["smartfill_profile", "smartfill_settings", "enabled"], (data) => {
             const profileFields = data.smartfill_profile?.fields || {};
             const settings = data.smartfill_settings || { autoFillEnabled: true };
+            // Respect the global enabled toggle from the popup
+            if (data.enabled === false)
+                return;
             const fields = allFields();
             for (const el of fields) {
                 if (fieldValue(el))

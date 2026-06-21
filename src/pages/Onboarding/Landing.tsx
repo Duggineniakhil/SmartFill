@@ -1,7 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Moon, Sun } from "lucide-react";
 import { Logo3D } from "@/components/profile/Logo3D";
-import testimonialAvatarAsset from "@/assets/testimonial-avatar.jpg.asset.json";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
@@ -51,7 +50,7 @@ const Landing = () => {
         <div className="mx-auto flex h-[56px] max-w-[1200px] items-center justify-between">
           <Link to="/" className="flex items-center gap-2 -ml-0.5">
             <StackedLogo size={16} />
-            <span className="text-[14px] font-bold text-foreground tracking-[0.08em] uppercase">Triage</span>
+            <span className="text-[14px] font-bold text-foreground tracking-[0.08em] uppercase">SmartFill</span>
           </Link>
           <div className="flex items-center gap-2">
             <button
@@ -334,7 +333,7 @@ const Landing = () => {
               "We replaced three tools with one. Mean time to resolution dropped 40% in the first month. The team actually uses it — that's the real win."
             </blockquote>
             <div className="mt-6 flex items-center gap-3">
-              <img src={testimonialAvatarAsset.url} alt="Jamie Kim" className="h-8 w-8 rounded-full object-cover" />
+              <div className="h-8 w-8 rounded-full bg-primary/30 flex items-center justify-center text-[11px] font-semibold text-primary shrink-0">JK</div>
               <div>
                 <span className="text-[13px] font-medium text-foreground">Jamie Kim</span>
                 <span className="text-[13px] text-muted-foreground ml-2">Engineering Lead, Acme Corp</span>
@@ -374,7 +373,7 @@ const Landing = () => {
         <div className="mx-auto max-w-[1200px] px-6 py-6 flex items-center justify-between">
           <div className="flex items-center gap-2 -ml-0.5">
             <StackedLogo size={16} />
-            <span className="text-[12px] font-bold text-foreground uppercase tracking-[0.08em]">Triage</span>
+            <span className="text-[12px] font-bold text-foreground uppercase tracking-[0.08em]">SmartFill</span>
           </div>
           <span className="text-[12px] text-muted-foreground">© {new Date().getFullYear()}</span>
         </div>
