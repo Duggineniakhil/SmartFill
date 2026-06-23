@@ -39,6 +39,21 @@ type GridScanProps = {
   style?: React.CSSProperties;
 };
 
+type PermissionDeviceOrientationEvent = typeof DeviceOrientationEvent & {
+  requestPermission?: () => Promise<PermissionState>;
+};
+
+type VideoFrameCallbackVideo = HTMLVideoElement & {
+  requestVideoFrameCallback?: (callback: VideoFrameRequestCallback) => number;
+};
+
+type BloomEffectWithLuminance = BloomEffect & {
+  luminanceMaterial: {
+    threshold: number;
+    smoothing: number;
+  };
+};
+
 const vert = `
 varying vec2 vUv;
 void main(){
@@ -411,12 +426,14 @@ export default function GridScan({
       if (
         enableGyro &&
         typeof window !== 'undefined' &&
-        (window as any).DeviceOrientationEvent &&
-        (DeviceOrientationEvent as any).requestPermission
+        window.DeviceOrientationEvent &&
+        (DeviceOrientationEvent as PermissionDeviceOrientationEvent).requestPermission
       ) {
         try {
-          await (DeviceOrientationEvent as any).requestPermission();
-        } catch {}
+          await (DeviceOrientationEvent as PermissionDeviceOrientationEvent).requestPermission?.();
+        } catch {
+          // Permission prompts can be dismissed; pointer interaction still works.
+        }
       }
     };
     const onEnter = () => {
@@ -636,8 +653,8 @@ export default function GridScan({
     }
     if (bloomRef.current) {
       bloomRef.current.blendMode.opacity.value = Math.max(0, bloomIntensity);
-      (bloomRef.current as any).luminanceMaterial.threshold = bloomThreshold;
-      (bloomRef.current as any).luminanceMaterial.smoothing = bloomSmoothing;
+      (bloomRef.current as BloomEffectWithLuminance).luminanceMaterial.threshold = bloomThreshold;
+      (bloomRef.current as BloomEffectWithLuminance).luminanceMaterial.smoothing = bloomSmoothing;
     }
     if (chromaRef.current) {
       chromaRef.current.offset.set(chromaticAberration, chromaticAberration);
@@ -705,7 +722,7 @@ export default function GridScan({
 
     const start = async () => {
       if (!enableWebcam || !modelsReady) return;
-      const video = videoRef.current;
+      const video = videoRef.current as VideoFrameCallbackVideo | null;
       if (!video) return;
 
       try {
@@ -780,7 +797,7 @@ export default function GridScan({
         }
 
         if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-          (video as any).requestVideoFrameCallback(() => detect(performance.now()));
+          video.requestVideoFrameCallback?.(() => detect(performance.now()));
         } else {
           requestAnimationFrame(detect);
         }
@@ -842,7 +859,7 @@ function smoothDampVec2(
   const x = omega * deltaTime;
   const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
 
-  let change = current.clone().sub(target);
+  const change = current.clone().sub(target);
   const originalTo = target.clone();
 
   const maxChange = maxSpeed * smoothTime;

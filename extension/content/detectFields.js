@@ -121,12 +121,16 @@ function fieldHints(el) {
             for (const node of childTexts) {
                 addTextHint(hints, elementText(node));
             }
+            // The nearest labelled container owns this field. Going higher can mix in
+            // labels from sibling questions, which is common in Google Forms.
             if (heading || childTexts.length > 0)
                 break;
             container = container.parentElement;
         }
     }
-    catch (_) { }
+    catch {
+        // Best-effort label extraction; inaccessible selectors should not block matching.
+    }
     return hints;
 }
 function evaluateRules(inputTokens) {
@@ -137,10 +141,12 @@ function evaluateRules(inputTokens) {
             for (const token of inputTokens) {
                 if (!token)
                     continue;
+                // 1. Exact match
                 if (token === normalizedAlias) {
                     return { canonicalField, confidence: 0.95 };
                 }
-                const escapedAlias = normalizedAlias.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                // 2. Whole word match (e.g. "college" in "college name")
+                const escapedAlias = normalizedAlias.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
                 const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
                 if (wordRegex.test(token)) {
                     const confidence = 0.85;
@@ -148,6 +154,7 @@ function evaluateRules(inputTokens) {
                         bestMatch = { canonicalField, confidence };
                     }
                 }
+                // 3. Substring match fallback
                 if (normalizedAlias.length > 3 && token.length > 3) {
                     if (token.includes(normalizedAlias) || normalizedAlias.includes(token)) {
                         const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);

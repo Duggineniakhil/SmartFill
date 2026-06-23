@@ -1,4 +1,4 @@
-// SmartFill content script — capture + autofill
+// SmartFill content script - capture + autofill
 "use strict";
 (function () {
   const { classify } = window.__SMARTFILL__;
@@ -38,7 +38,7 @@
   }
 
   function captureFrom(root: ParentNode) {
-    chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data: any) => {
+    chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data) => {
       const settings = data.smartfill_settings || {};
       // Respect the global enabled toggle from the popup
       if (data.enabled === false) return;
@@ -67,8 +67,12 @@
     });
   }
 
-  document.addEventListener("submit", (e: any) => {
-    try { captureFrom(e.target); } catch (_) {}
+  document.addEventListener("submit", (e) => {
+    try {
+      if (e.target instanceof Element) captureFrom(e.target);
+    } catch {
+      // Ignore pages that block field inspection during submit.
+    }
   }, true);
 
   const BADGE_CLASS = "smartfill-badge";
@@ -83,7 +87,7 @@
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = BADGE_CLASS;
-    btn.textContent = "⚡";
+    btn.textContent = "SF";
     btn.title = `SmartFill: fill "${value}"`;
     btn.style.cssText = `
       pointer-events:auto;background:#22d3ee;color:#000;border:none;border-radius:6px;
@@ -108,14 +112,18 @@
     }
     position();
     const ro = new ResizeObserver(position);
-    try { ro.observe(el); } catch (_) {}
+    try {
+      ro.observe(el);
+    } catch {
+      // Some detached elements cannot be observed.
+    }
     window.addEventListener("scroll", position, true);
     window.addEventListener("resize", position);
 
     el.addEventListener("input", () => { if (fieldValue(el)) wrap.remove(); }, { once: true });
   }
 
-  function setNativeValue(el: any, value: string) {
+  function setNativeValue(el: HTMLElement, value: string) {
     if (el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('role') === 'textbox') {
       el.focus();
       el.innerText = value;
@@ -128,18 +136,19 @@
       el.blur();
       return;
     }
+    const control = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype
                 : el.tagName === "SELECT" ? HTMLSelectElement.prototype
                 : HTMLInputElement.prototype;
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
-    if (setter) setter.call(el, value);
-    else el.value = value;
+    if (setter) setter.call(control, value);
+    else control.value = value;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   function scan() {
-    chrome.storage.local.get(["smartfill_profile", "smartfill_settings", "enabled"], (data: any) => {
+    chrome.storage.local.get(["smartfill_profile", "smartfill_settings", "enabled"], (data) => {
       const profileFields = data.smartfill_profile?.fields || {};
       const settings = data.smartfill_settings || { autoFillEnabled: true };
       // Respect the global enabled toggle from the popup
@@ -168,7 +177,7 @@
     });
   }
 
-  let scanTimer: any;
+  let scanTimer: ReturnType<typeof setTimeout>;
   function scheduleScan() {
     clearTimeout(scanTimer);
     scanTimer = setTimeout(scan, 250);
@@ -177,9 +186,9 @@
   const obs = new MutationObserver(scheduleScan);
   obs.observe(document.documentElement, { childList: true, subtree: true });
 
-  chrome.runtime.onMessage.addListener((msg: any, _s: any, send: any) => {
-    if (msg?.type === "SMARTFILL_FILL_NOW") {
-      chrome.storage.local.get("smartfill_profile", (data: any) => {
+  chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+    if (typeof msg === "object" && msg !== null && "type" in msg && msg.type === "SMARTFILL_FILL_NOW") {
+      chrome.storage.local.get("smartfill_profile", (data) => {
         const profileFields = data.smartfill_profile?.fields || {};
         let filled = 0;
         for (const el of allFields()) {
@@ -191,7 +200,9 @@
           try {
             setNativeValue(el, value);
             filled++;
-          } catch (_) {}
+          } catch {
+            // Continue filling other matched fields if one element rejects updates.
+          }
         }
         send({ filled });
       });

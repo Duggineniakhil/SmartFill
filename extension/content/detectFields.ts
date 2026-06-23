@@ -136,7 +136,9 @@ function fieldHints(el: HTMLElement): FieldHints {
 
       container = container.parentElement;
     }
-  } catch (_) {}
+  } catch {
+    // Best-effort label extraction; inaccessible selectors should not block matching.
+  }
 
   return hints;
 }
@@ -162,7 +164,7 @@ function evaluateRules(inputTokens: string[]): MatchResult {
         }
 
         // 2. Whole word match (e.g. "college" in "college name")
-        const escapedAlias = normalizedAlias.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const escapedAlias = normalizedAlias.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
         const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
         if (wordRegex.test(token)) {
           const confidence = 0.85;
@@ -216,4 +218,4 @@ function classify(el: HTMLElement): MatchResult {
   return { canonicalField: null, confidence: 0 };
 }
 
-(window as any).__SMARTFILL__ = { classify, isForbidden, fieldHints, ALIASES };
+window.__SMARTFILL__ = { classify, isForbidden, fieldHints, ALIASES };

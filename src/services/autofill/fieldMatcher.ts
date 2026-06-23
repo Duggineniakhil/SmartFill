@@ -64,7 +64,7 @@ function evaluateRules(inputTokens: string[]): MatchResult {
         }
 
         // Whole word match (e.g. "college" in "college name")
-        const escapedAlias = normalizedAlias.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const escapedAlias = normalizedAlias.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
         const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
         if (wordRegex.test(token)) {
           const confidence = 0.85;
@@ -99,7 +99,7 @@ export function matchField(input: HTMLElement | PartialInputInfo): MatchResult {
   if (input instanceof HTMLElement) {
     // In a real content script, extract from DOM element
     // For now, we cast assuming it's an input-like element
-    const el = input as any;
+    const el = input as HTMLInputElement | HTMLTextAreaElement;
     info = {
       name: el.name,
       id: el.id,

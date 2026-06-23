@@ -1,4 +1,4 @@
-// SmartFill content script — capture + autofill
+// SmartFill content script - capture + autofill
 "use strict";
 (function () {
     const { classify } = window.__SMARTFILL__;
@@ -68,9 +68,12 @@
     }
     document.addEventListener("submit", (e) => {
         try {
-            captureFrom(e.target);
+            if (e.target instanceof Element)
+                captureFrom(e.target);
         }
-        catch (_) { }
+        catch {
+            // Ignore pages that block field inspection during submit.
+        }
     }, true);
     const BADGE_CLASS = "smartfill-badge";
     function makeBadge(el, value) {
@@ -84,7 +87,7 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = BADGE_CLASS;
-        btn.textContent = "⚡";
+        btn.textContent = "SF";
         btn.title = `SmartFill: fill "${value}"`;
         btn.style.cssText = `
       pointer-events:auto;background:#22d3ee;color:#000;border:none;border-radius:6px;
@@ -115,7 +118,9 @@
         try {
             ro.observe(el);
         }
-        catch (_) { }
+        catch {
+            // Some detached elements cannot be observed.
+        }
         window.addEventListener("scroll", position, true);
         window.addEventListener("resize", position);
         el.addEventListener("input", () => { if (fieldValue(el))
@@ -134,14 +139,15 @@
             el.blur();
             return;
         }
+        const control = el;
         const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype
             : el.tagName === "SELECT" ? HTMLSelectElement.prototype
                 : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
         if (setter)
-            setter.call(el, value);
+            setter.call(control, value);
         else
-            el.value = value;
+            control.value = value;
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
     }
@@ -184,8 +190,8 @@
     scheduleScan();
     const obs = new MutationObserver(scheduleScan);
     obs.observe(document.documentElement, { childList: true, subtree: true });
-    chrome.runtime.onMessage.addListener((msg, _s, send) => {
-        if (msg?.type === "SMARTFILL_FILL_NOW") {
+    chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+        if (typeof msg === "object" && msg !== null && "type" in msg && msg.type === "SMARTFILL_FILL_NOW") {
             chrome.storage.local.get("smartfill_profile", (data) => {
                 const profileFields = data.smartfill_profile?.fields || {};
                 let filled = 0;
@@ -202,7 +208,9 @@
                         setNativeValue(el, value);
                         filled++;
                     }
-                    catch (_) { }
+                    catch {
+                        // Continue filling other matched fields if one element rejects updates.
+                    }
                 }
                 send({ filled });
             });
