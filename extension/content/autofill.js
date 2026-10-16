@@ -2,6 +2,12 @@
 "use strict";
 (function () {
     const { classify } = window.__SMARTFILL__;
+    // Confidence thresholds (see classify() in detectFields.ts):
+    // >= AUTOFILL_THRESHOLD: filled silently (if auto-fill is on), filled by
+    //   "Fill this page", and captured into the profile on submit.
+    // >= SUGGEST_THRESHOLD: only offered via the one-click "SF" badge.
+    const AUTOFILL_THRESHOLD = 0.75;
+    const SUGGEST_THRESHOLD = 0.5;
     const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea, select, [role="textbox"], [contenteditable="true"]';
     function allFields(root = document) {
         return Array.from(root.querySelectorAll(INPUT_SEL)).filter((el) => {
@@ -50,7 +56,7 @@
             for (const el of allFields(root)) {
                 const { canonicalField, confidence } = classify(el);
                 const val = fieldValue(el);
-                if (canonicalField && confidence >= 0.75 && val) {
+                if (canonicalField && confidence >= AUTOFILL_THRESHOLD && val) {
                     collected[canonicalField] = val;
                 }
             }
@@ -165,12 +171,12 @@
                 if (el.dataset.smartfill === "1")
                     continue;
                 const { canonicalField, confidence } = classify(el);
-                if (!canonicalField || confidence < 0.50)
+                if (!canonicalField || confidence < SUGGEST_THRESHOLD)
                     continue;
                 const value = getProfileValue(profileFields, canonicalField);
                 if (!value)
                     continue;
-                if (confidence >= 0.75) {
+                if (confidence >= AUTOFILL_THRESHOLD) {
                     if (settings.autoFillEnabled) {
                         setNativeValue(el, value);
                         el.dataset.smartfill = "1";
@@ -192,14 +198,21 @@
     obs.observe(document.documentElement, { childList: true, subtree: true });
     chrome.runtime.onMessage.addListener((msg, _sender, send) => {
         if (typeof msg === "object" && msg !== null && "type" in msg && msg.type === "SMARTFILL_FILL_NOW") {
-            chrome.storage.local.get("smartfill_profile", (data) => {
+            chrome.storage.local.get(["smartfill_profile", "enabled"], (data) => {
+                if (data.enabled === false) {
+                    send({ filled: 0, disabled: true });
+                    return;
+                }
                 const profileFields = data.smartfill_profile?.fields || {};
                 let filled = 0;
                 for (const el of allFields()) {
                     if (fieldValue(el))
                         continue;
-                    const { canonicalField } = classify(el);
-                    if (!canonicalField)
+                    // "Fill this page" writes every matched field in one go with no
+                    // per-field review, so it uses the same bar as silent auto-fill.
+                    // Weaker matches keep their "SF" badge for one-click confirmation.
+                    const { canonicalField, confidence } = classify(el);
+                    if (!canonicalField || confidence < AUTOFILL_THRESHOLD)
                         continue;
                     const value = getProfileValue(profileFields, canonicalField);
                     if (!value)

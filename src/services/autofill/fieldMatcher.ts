@@ -48,42 +48,62 @@ function normalize(str: string | undefined): string {
     .trim();
 }
 
+// Aliases too generic to stand on their own. A bare "name" qualified by a
+// preceding word ("College Name", "Company Name", "Father's Name") describes
+// something else, so it only scores as a weak hint below the 0.75 autofill
+// threshold. Keep this logic in sync with extension/content/detectFields.ts.
+const GENERIC_ALIASES = new Set(['name']);
+const GENERIC_QUALIFIED_CONFIDENCE = 0.6;
+
+function escapeRegex(s: string): string {
+  return s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function wordMatchConfidence(token: string, normalizedAlias: string): number {
+  const escapedAlias = escapeRegex(normalizedAlias);
+  if (!new RegExp(`\\b${escapedAlias}\\b`, 'i').test(token)) return 0;
+  if (GENERIC_ALIASES.has(normalizedAlias) && new RegExp(`\\S\\s+${escapedAlias}\\b`, 'i').test(token)) {
+    return GENERIC_QUALIFIED_CONFIDENCE;
+  }
+  return 0.85;
+}
+
 function evaluateRules(inputTokens: string[]): MatchResult {
   let bestMatch: MatchResult = { canonicalField: null, confidence: 0 };
+  let bestAliasLength = 0;
+
+  // Higher confidence wins; on a tie the longer (more specific) alias wins.
+  const consider = (canonicalField: string, alias: string, confidence: number) => {
+    const aliasLength = normalize(alias).length;
+    if (confidence > bestMatch.confidence || (confidence === bestMatch.confidence && aliasLength > bestAliasLength)) {
+      bestMatch = { canonicalField, confidence, matchedAlias: alias };
+      bestAliasLength = aliasLength;
+    }
+  };
 
   for (const [canonicalField, aliases] of Object.entries(FIELD_ALIASES)) {
     for (const alias of aliases) {
       const normalizedAlias = normalize(alias);
-      
+
       for (const token of inputTokens) {
         if (!token) continue;
-        
-        // Exact match
+
+        // 1. Exact match
         if (token === normalizedAlias) {
           return { canonicalField, confidence: 0.95, matchedAlias: alias };
         }
 
-        // Whole word match (e.g. "college" in "college name")
-        const escapedAlias = normalizedAlias.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
-        if (wordRegex.test(token)) {
-          const confidence = 0.85;
-          if (confidence > bestMatch.confidence) {
-            bestMatch = { canonicalField, confidence, matchedAlias: alias };
-          }
-        }
+        // 2. Whole word match (e.g. "college" in "college name")
+        const wordConfidence = wordMatchConfidence(token, normalizedAlias);
+        if (wordConfidence > 0) consider(canonicalField, alias, wordConfidence);
 
-        // Partial match (e.g., token contains alias or alias contains token)
-        // We only consider it a partial match if it's reasonably long to avoid false positives
+        // 3. Substring match fallback, only for reasonably long strings
         if (normalizedAlias.length > 3 && token.length > 3) {
           if (token.includes(normalizedAlias) || normalizedAlias.includes(token)) {
-             // Calculate a simple confidence based on string length ratio
-             const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);
-             const confidence = 0.5 + (ratio * 0.3); // Base 0.5, max 0.8 for partial
-             
-             if (confidence > bestMatch.confidence) {
-               bestMatch = { canonicalField, confidence, matchedAlias: alias };
-             }
+            const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);
+            let confidence = 0.5 + (ratio * 0.3); // Base 0.5, max 0.8
+            if (GENERIC_ALIASES.has(normalizedAlias)) confidence = Math.min(confidence, GENERIC_QUALIFIED_CONFIDENCE);
+            consider(canonicalField, alias, confidence);
           }
         }
       }

@@ -40,11 +40,21 @@ function render(profile: Record<string, string>) {
     return;
   }
   container.className = "profile";
-  container.innerHTML = "";
+  container.replaceChildren();
   for (const [k, v] of entries) {
+    // Keys and values are captured from arbitrary web pages: build nodes with
+    // textContent, never innerHTML.
+    const value = String(v ?? "");
     const row = document.createElement("div");
     row.className = "item";
-    row.innerHTML = `<div class="key">${LABELS[k] || k}</div><div class="val" title="${v.replace(/"/g, "&quot;")}">${v}</div>`;
+    const keyEl = document.createElement("div");
+    keyEl.className = "key";
+    keyEl.textContent = LABELS[k] || k;
+    const valEl = document.createElement("div");
+    valEl.className = "val";
+    valEl.title = value;
+    valEl.textContent = value;
+    row.append(keyEl, valEl);
     const del = document.createElement("button");
     del.className = "del"; del.textContent = "×"; del.title = "Remove";
     del.onclick = () => {
@@ -125,9 +135,9 @@ if (fillNowEl) {
     const txt = btn ? btn.textContent : "";
 
     const showResult = (res: unknown) => {
-      const response = res as { filled?: number } | undefined;
+      const response = res as { filled?: number; disabled?: boolean } | undefined;
       const filled = response?.filled || 0;
-      if (btn) btn.textContent = `Filled ${filled} field${filled === 1 ? "" : "s"}`;
+      if (btn) btn.textContent = response?.disabled ? "SmartFill is disabled" : `Filled ${filled} field${filled === 1 ? "" : "s"}`;
       setTimeout(() => { if (btn) btn.textContent = txt; }, 1600);
     };
 

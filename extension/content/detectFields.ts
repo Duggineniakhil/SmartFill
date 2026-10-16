@@ -28,6 +28,12 @@ const FORBIDDEN = [
   'card number', 'credit card', 'ssn', 'social security', 'pin', 'verification code',
 ];
 
+// Whole-word match so 'pin' doesn't block "Shipping Address" and 'otp' doesn't
+// block "Footprint". Runs against the normalized hint blob (lowercase, single spaces).
+const FORBIDDEN_RE = new RegExp(`\\b(?:${FORBIDDEN.map((k) => k.replace(/\s+/g, '\\s+')).join('|')})\\b`);
+// Unambiguous keywords still match inside compact names/ids like "newpassword".
+const FORBIDDEN_SUBSTRINGS = ['password', 'passwd'];
+
 function normalize(s: string | undefined): string {
   if (!s) return '';
   return s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -73,8 +79,10 @@ interface FieldHints {
 
 function isForbidden(el: HTMLElement, hints: FieldHints): boolean {
   if ((el as HTMLInputElement).type === 'password') return true;
-  const blob = normalize(hints.label + ' ' + hints.ariaLabel + ' ' + hints.placeholder + ' ' + hints.name + ' ' + hints.id);
-  return FORBIDDEN.some((k) => blob.includes(k));
+  // Split camelCase ("otpCode", "cardNumber") so whole-word matching sees the parts.
+  const raw = [hints.label, hints.ariaLabel, hints.placeholder, hints.name, hints.id].join(' ');
+  const blob = normalize(raw.replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
+  return FORBIDDEN_RE.test(blob) || FORBIDDEN_SUBSTRINGS.some((k) => blob.includes(k));
 }
 
 function fieldHints(el: HTMLElement): FieldHints {
@@ -148,8 +156,38 @@ interface MatchResult {
   confidence: number;
 }
 
+// Aliases too generic to stand on their own. A bare "name" qualified by a
+// preceding word ("College Name", "Company Name", "Father's Name") describes
+// something else, so it only scores as a weak hint below the 0.75 autofill
+// threshold. Keep this logic in sync with src/services/autofill/fieldMatcher.ts.
+const GENERIC_ALIASES = new Set(['name']);
+const GENERIC_QUALIFIED_CONFIDENCE = 0.6;
+
+function escapeRegex(s: string): string {
+  return s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function wordMatchConfidence(token: string, normalizedAlias: string): number {
+  const escapedAlias = escapeRegex(normalizedAlias);
+  if (!new RegExp(`\\b${escapedAlias}\\b`, 'i').test(token)) return 0;
+  if (GENERIC_ALIASES.has(normalizedAlias) && new RegExp(`\\S\\s+${escapedAlias}\\b`, 'i').test(token)) {
+    return GENERIC_QUALIFIED_CONFIDENCE;
+  }
+  return 0.85;
+}
+
 function evaluateRules(inputTokens: string[]): MatchResult {
   let bestMatch: MatchResult = { canonicalField: null, confidence: 0 };
+  let bestAliasLength = 0;
+
+  // Higher confidence wins; on a tie the longer (more specific) alias wins.
+  const consider = (canonicalField: string, alias: string, confidence: number) => {
+    const aliasLength = normalize(alias).length;
+    if (confidence > bestMatch.confidence || (confidence === bestMatch.confidence && aliasLength > bestAliasLength)) {
+      bestMatch = { canonicalField, confidence };
+      bestAliasLength = aliasLength;
+    }
+  };
 
   for (const [canonicalField, aliases] of Object.entries(ALIASES)) {
     for (const alias of aliases) {
@@ -164,24 +202,16 @@ function evaluateRules(inputTokens: string[]): MatchResult {
         }
 
         // 2. Whole word match (e.g. "college" in "college name")
-        const escapedAlias = normalizedAlias.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-        const wordRegex = new RegExp(`\\b${escapedAlias}\\b`, 'i');
-        if (wordRegex.test(token)) {
-          const confidence = 0.85;
-          if (confidence > bestMatch.confidence) {
-            bestMatch = { canonicalField, confidence };
-          }
-        }
+        const wordConfidence = wordMatchConfidence(token, normalizedAlias);
+        if (wordConfidence > 0) consider(canonicalField, alias, wordConfidence);
 
-        // 3. Substring match fallback
+        // 3. Substring match fallback, only for reasonably long strings
         if (normalizedAlias.length > 3 && token.length > 3) {
           if (token.includes(normalizedAlias) || normalizedAlias.includes(token)) {
             const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);
-            const confidence = 0.5 + (ratio * 0.3);
-
-            if (confidence > bestMatch.confidence) {
-              bestMatch = { canonicalField, confidence };
-            }
+            let confidence = 0.5 + (ratio * 0.3); // Base 0.5, max 0.8
+            if (GENERIC_ALIASES.has(normalizedAlias)) confidence = Math.min(confidence, GENERIC_QUALIFIED_CONFIDENCE);
+            consider(canonicalField, alias, confidence);
           }
         }
       }
