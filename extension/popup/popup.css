@@ -28,7 +28,8 @@ header {
   padding: 8px 10px; border-bottom: 1px solid #1f2937;
 }
 .profile .item:last-child { border: 0; }
-.profile .key { color: #6b7280; text-transform: capitalize; font-size: 11px; }
+.profile .key { color: #6b7280; text-transform: capitalize; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#custom .key { text-transform: none; }
 .profile .val { color: #e5e7eb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile .del {
   background: transparent; border: 1px solid #1f2937; color: #9ca3af;

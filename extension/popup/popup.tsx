@@ -9,7 +9,11 @@ const LABELS: Record<string, string> = {
   address: "Address", city: "City", state: "State / Province",
   country: "Country", postal_code: "ZIP / Postal Code",
   resume: "Resume Link",
-  cgpa: "CGPA"
+  cgpa: "CGPA",
+  company: "Company", job_title: "Job Title", experience_years: "Experience (years)",
+  date_of_birth: "Date of Birth", gender: "Gender", nationality: "Nationality",
+  notice_period: "Notice Period", current_ctc: "Current CTC", expected_ctc: "Expected CTC",
+  address_line2: "Address Line 2", twitter: "Twitter / X", leetcode: "LeetCode",
 };
 
 const KEY_MAP: Record<string, string> = {
@@ -30,43 +34,68 @@ function getNormalizedProfile(d: SmartFillStorageData): Record<string, string> {
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
   document.getElementById(id) as T | null;
 
-function render(profile: Record<string, string>) {
-  const container = $("profile");
+type Row = { label: string; value: string; onDelete: () => void };
+
+function renderRows(container: HTMLElement | null, rows: Row[], emptyText: string) {
   if (!container) return;
-  const entries = Object.entries(profile || {});
-  if (entries.length === 0) {
+  if (rows.length === 0) {
     container.className = "profile empty";
-    container.textContent = "No data yet. Fill a form anywhere and SmartFill will remember it.";
+    container.textContent = emptyText;
     return;
   }
   container.className = "profile";
   container.replaceChildren();
-  for (const [k, v] of entries) {
+  for (const { label, value, onDelete } of rows) {
     // Keys and values are captured from arbitrary web pages: build nodes with
     // textContent, never innerHTML.
-    const value = String(v ?? "");
     const row = document.createElement("div");
     row.className = "item";
     const keyEl = document.createElement("div");
     keyEl.className = "key";
-    keyEl.textContent = LABELS[k] || k;
+    keyEl.textContent = label;
+    keyEl.title = label;
     const valEl = document.createElement("div");
     valEl.className = "val";
     valEl.title = value;
     valEl.textContent = value;
-    row.append(keyEl, valEl);
     const del = document.createElement("button");
     del.className = "del"; del.textContent = "×"; del.title = "Remove";
-    del.onclick = () => {
+    del.onclick = onDelete;
+    row.append(keyEl, valEl, del);
+    container.appendChild(row);
+  }
+}
+
+function render(profile: Record<string, string>) {
+  renderRows($("profile"), Object.entries(profile || {}).map(([k, v]) => ({
+    label: LABELS[k] || k,
+    value: String(v ?? ""),
+    onDelete: () => {
       chrome.storage.local.get({ profile: {}, smartfill_profile: { fields: {} } }, (d) => {
         const profile = getNormalizedProfile(d);
         delete profile[k];
         chrome.storage.local.set({ profile, smartfill_profile: { ...(d.smartfill_profile || {}), fields: profile } }, load);
       });
-    };
-    row.appendChild(del);
-    container.appendChild(row);
-  }
+    },
+  })), "No data yet. Fill a form anywhere and SmartFill will remember it.");
+}
+
+function renderCustom(custom: Record<string, SmartFillCustomField>) {
+  const rows = Object.entries(custom || {})
+    .sort((a, b) => (b[1].updated_at || "").localeCompare(a[1].updated_at || ""))
+    .map(([key, entry]) => ({
+      label: entry.label || key,
+      value: String(entry.value ?? ""),
+      onDelete: () => {
+        chrome.storage.local.get({ smartfill_profile: { fields: {} } }, (d) => {
+          const current = d.smartfill_profile || {};
+          const next = { ...(current.custom || {}) };
+          delete next[key];
+          chrome.storage.local.set({ smartfill_profile: { ...current, custom: next } }, load);
+        });
+      },
+    }));
+  renderRows($("custom"), rows, "Answers to other questions are remembered here by their label.");
 }
 
 function load() {
@@ -77,6 +106,7 @@ function load() {
     const autoFillEl = $<HTMLInputElement>("autoFill");
     if (autoFillEl) autoFillEl.checked = d.smartfill_settings?.autoFillEnabled ?? d.autoFill;
     render(mergedProfile);
+    renderCustom(d.smartfill_profile?.custom || {});
   });
 }
 

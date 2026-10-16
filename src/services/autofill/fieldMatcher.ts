@@ -36,6 +36,18 @@ const FIELD_ALIASES: Record<string, string[]> = {
   skills: ['skills', 'core competencies', 'technical skills', 'technologies'],
   resume: ['resume', 'cv', 'resume link', 'cv link', 'resume drive link', 'upload the resume', 'curriculum vitae'],
   cgpa: ['cgpa', 'gpa', 'grades', 'grade point average', 'gpa score'],
+  company: ['company', 'company name', 'current company', 'employer', 'current employer', 'organization', 'organisation'],
+  job_title: ['job title', 'current title', 'designation', 'current designation', 'current role'],
+  experience_years: ['years of experience', 'total experience', 'work experience', 'experience', 'years experience'],
+  date_of_birth: ['date of birth', 'dob', 'birth date', 'birthdate', 'birthday'],
+  gender: ['gender', 'sex'],
+  nationality: ['nationality', 'citizenship'],
+  notice_period: ['notice period'],
+  current_ctc: ['current ctc', 'current salary', 'current compensation'],
+  expected_ctc: ['expected ctc', 'expected salary', 'salary expectation', 'expected compensation', 'desired salary'],
+  address_line2: ['address line 2', 'apartment', 'apt', 'suite', 'flat number'],
+  twitter: ['twitter', 'twitter profile', 'twitter handle', 'x profile'],
+  leetcode: ['leetcode', 'leetcode profile'],
 };
 
 // Normalize string for matching
@@ -48,12 +60,30 @@ function normalize(str: string | undefined): string {
     .trim();
 }
 
-// Aliases too generic to stand on their own. A bare "name" qualified by a
-// preceding word ("College Name", "Company Name", "Father's Name") describes
-// something else, so it only scores as a weak hint below the 0.75 autofill
+// Aliases too generic to stand on their own. A bare "name" or "experience"
+// qualified by a preceding word ("Father's Name", "Describe your experience")
+// describes something else, so it only scores as a weak hint below the 0.75 autofill
 // threshold. Keep this logic in sync with extension/content/detectFields.ts.
-const GENERIC_ALIASES = new Set(['name']);
+const GENERIC_ALIASES = new Set(['name', 'experience']);
 const GENERIC_QUALIFIED_CONFIDENCE = 0.6;
+const OWNER_ALIASES = new Set(['company', 'employer', 'organization', 'organisation']);
+
+// Words that mean the field is about someone or something other than the user
+// ("Previous Company", "Father's Name", "Emergency contact phone", "Company
+// Address"). Unless the alias itself contains the word ("company name"), such a
+// match is capped below the 0.75 autofill threshold so it is only suggested.
+const OTHER_PARTY_WORDS = [
+  'previous', 'former', 'past', 'father', 'mother', 'parent', 'guardian', 'spouse',
+  'emergency', 'reference', 'referee', 'referrer', 'manager', 'supervisor', 'nominee',
+  'company', 'employer', 'office',
+];
+
+function capForOtherParty(token: string, normalizedAlias: string, confidence: number): number {
+  const tokenWords = token.split(' ');
+  const aliasWords = normalizedAlias.split(' ');
+  const qualified = OTHER_PARTY_WORDS.some((w) => tokenWords.includes(w) && !aliasWords.includes(w));
+  return qualified ? Math.min(confidence, GENERIC_QUALIFIED_CONFIDENCE) : confidence;
+}
 
 function escapeRegex(s: string): string {
   return s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -63,6 +93,10 @@ function wordMatchConfidence(token: string, normalizedAlias: string): number {
   const escapedAlias = escapeRegex(normalizedAlias);
   if (!new RegExp(`\\b${escapedAlias}\\b`, 'i').test(token)) return 0;
   if (GENERIC_ALIASES.has(normalizedAlias) && new RegExp(`\\S\\s+${escapedAlias}\\b`, 'i').test(token)) {
+    return GENERIC_QUALIFIED_CONFIDENCE;
+  }
+  // "Company Address", "Employer Website": an attribute of the company, not its name.
+  if (OWNER_ALIASES.has(normalizedAlias) && new RegExp(`\\b${escapedAlias}\\s+(?!name\\b)\\S`, 'i').test(token)) {
     return GENERIC_QUALIFIED_CONFIDENCE;
   }
   return 0.85;
@@ -95,7 +129,7 @@ function evaluateRules(inputTokens: string[]): MatchResult {
 
         // 2. Whole word match (e.g. "college" in "college name")
         const wordConfidence = wordMatchConfidence(token, normalizedAlias);
-        if (wordConfidence > 0) consider(canonicalField, alias, wordConfidence);
+        if (wordConfidence > 0) consider(canonicalField, alias, capForOtherParty(token, normalizedAlias, wordConfidence));
 
         // 3. Substring match fallback, only for reasonably long strings
         if (normalizedAlias.length > 3 && token.length > 3) {
@@ -103,7 +137,7 @@ function evaluateRules(inputTokens: string[]): MatchResult {
             const ratio = Math.min(token.length, normalizedAlias.length) / Math.max(token.length, normalizedAlias.length);
             let confidence = 0.5 + (ratio * 0.3); // Base 0.5, max 0.8
             if (GENERIC_ALIASES.has(normalizedAlias)) confidence = Math.min(confidence, GENERIC_QUALIFIED_CONFIDENCE);
-            consider(canonicalField, alias, confidence);
+            consider(canonicalField, alias, capForOtherParty(token, normalizedAlias, confidence));
           }
         }
       }

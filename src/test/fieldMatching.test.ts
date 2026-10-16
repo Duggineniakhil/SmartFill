@@ -31,7 +31,10 @@ describe("alias matching: generic 'name'", () => {
     expect(classify(labelled(label)).canonicalField).toBe(expected);
   });
 
-  it.each(["Company Name", "Father's Name", "Project Name"])("keeps %s below the 0.75 autofill threshold", (label) => {
+  it.each([
+    "Father's Name", "Project Name", "Previous Company", "Company Address", "Company Website",
+    "Emergency contact phone", "Reference email", "Describe your experience",
+  ])("keeps %s below the 0.75 autofill threshold", (label) => {
     expect(matchField({ label }).confidence).toBeLessThan(0.75);
     expect(classify(labelled(label)).confidence).toBeLessThan(0.75);
   });
@@ -69,6 +72,24 @@ describe("alias matching: generic 'name'", () => {
   });
 });
 
+describe("new field types", () => {
+  it.each([
+    ["Company Name", "company"], ["Current Employer", "company"], ["Organization", "company"],
+    ["Job Title", "job_title"], ["Designation", "job_title"],
+    ["Total Experience (years)", "experience_years"], ["Years of experience", "experience_years"],
+    ["Date of Birth", "date_of_birth"], ["DOB", "date_of_birth"],
+    ["Gender", "gender"], ["Nationality", "nationality"], ["Notice Period (days)", "notice_period"],
+    ["Current CTC (LPA)", "current_ctc"], ["Expected Salary", "expected_ctc"],
+    ["Address Line 2", "address_line2"], ["Apartment, suite, etc.", "address_line2"],
+    ["Twitter handle", "twitter"], ["LeetCode Profile", "leetcode"],
+  ])("classifies %s as %s", (label, expected) => {
+    const dashboard = matchField({ label });
+    expect(dashboard.canonicalField).toBe(expected);
+    expect(dashboard.confidence).toBeGreaterThanOrEqual(0.75);
+    expect(classify(labelled(label))).toEqual({ canonicalField: expected, confidence: dashboard.confidence });
+  });
+});
+
 describe("FORBIDDEN list", () => {
   const input = document.createElement("input");
 
@@ -89,6 +110,9 @@ describe("FORBIDDEN list", () => {
     hints({ id: "cardNumber" }),
     hints({ name: "newpassword" }),
     hints({ name: "user_pwd" }),
+    hints({ label: "Aadhaar" }),
+    hints({ label: "Bank Account Number" }),
+    hints({ label: "Type the captcha" }),
   ])("blocks %o", (h) => {
     expect(isForbidden(input, h)).toBe(true);
   });

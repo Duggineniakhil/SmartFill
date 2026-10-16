@@ -53,3 +53,32 @@ describe("popup", () => {
     expect(js).toContain("SmartFill is disabled");
   });
 });
+
+describe("popup custom fields", () => {
+  it("lists custom fields as text and deletes one", () => {
+    const custom = {
+      "preferred work location": { label: "Preferred <i>work</i> location", value: "London", updated_at: "2026-01-02" },
+      "t shirt size": { label: "T-shirt size", value: "M", updated_at: "2026-01-01" },
+    };
+    document.body.innerHTML = new DOMParser().parseFromString(popupHtml, "text/html").body.innerHTML;
+    const set = vi.fn();
+    Object.assign(window, {
+      chrome: { storage: { local: {
+        get: (defaults: Record<string, unknown>, cb: (d: unknown) => void) => cb({ ...defaults, smartfill_profile: { fields: {}, custom } }),
+        set,
+      } } },
+    });
+    window.eval(readFileSync(resolve("extension/popup/popup.js"), "utf8"));
+
+    const box = document.getElementById("custom")!;
+    expect(box.querySelector("i")).toBeNull();
+    expect(Array.from(box.querySelectorAll(".item"), (r) => [r.querySelector(".key")!.textContent, r.querySelector(".val")!.textContent]))
+      .toEqual([["Preferred <i>work</i> location", "London"], ["T-shirt size", "M"]]);
+
+    (box.querySelectorAll(".del")[1] as HTMLButtonElement).click();
+    expect(set).toHaveBeenCalledWith(
+      { smartfill_profile: { fields: {}, custom: { "preferred work location": custom["preferred work location"] } } },
+      expect.any(Function),
+    );
+  });
+});

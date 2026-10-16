@@ -14,8 +14,16 @@ declare global {
     confidence: number;
   }
 
+  interface SmartFillCustomField {
+    label: string;
+    value: string;
+    updated_at: string;
+  }
+
   interface SmartFillProfile {
     fields?: Record<string, string>;
+    // Fields with no canonical type, keyed by normalized label text.
+    custom?: Record<string, SmartFillCustomField>;
     updated_at?: string;
     [key: string]: unknown;
   }
@@ -73,6 +81,8 @@ declare global {
       classify: (el: HTMLElement) => SmartFillMatchResult;
       isForbidden: (el: HTMLElement, hints: SmartFillFieldHints) => boolean;
       fieldHints: (el: HTMLElement) => SmartFillFieldHints;
+      customFieldKey: (el: HTMLElement) => { key: string; label: string } | null;
+      labelSimilarity: (a: string, b: string) => number;
       ALIASES: Record<string, string[]>;
       fillNow?: () => Promise<{ filled: number; disabled?: boolean }>;
     };

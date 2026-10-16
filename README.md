@@ -27,7 +27,10 @@ future forms while keeping all data stored locally on the user's device.
 
 ## Features
 
-- **Auto-Learning:** Fill a form once, and SmartFill remembers it.
+- **Auto-Learning:** Fill a form once, and SmartFill remembers it when you submit. Known field types
+  (name, email, phone, address, education, company, job title, experience, notice period, CTC, socials, …)
+  carry over to any site; answers to other questions are remembered by their label and refilled where
+  the same question appears again. Passwords, OTPs, card/bank/ID numbers, search boxes and login forms are never learned.
 - **Instant Autofill:** One-click to populate applications, signups, and profiles.
 - **100% Local Privacy:** Zero cloud dependency. Your data never leaves your device and is stored securely in `chrome.storage.local`.
 - **Modern Interface:** Built with React, Tailwind CSS, and shadcn-ui.

@@ -20,6 +20,7 @@ const FORM = `<!doctype html><html><body>
   <div><label for="phone">Phone Number</label><input id="phone" name="phone" type="tel"></div>
   <div><label for="college">College Name</label><input id="college" name="college"></div>
   <div><label for="company">Company Name</label><input id="company" name="company"></div>
+  <div><label for="father">Father's Name</label><input id="father" name="father"></div>
   <div><label for="ship">Shipping Address</label><input id="ship" name="ship"></div>
   <div><label for="pw">Password</label><input id="pw" name="pw" type="password"></div>
   <div><label for="otp">Enter OTP</label><input id="otp" name="otp"></div>
@@ -42,6 +43,7 @@ const SPLIT = `<!doctype html><html><body><form>
 const GFORM = `<!doctype html><html><body>
   <div role="listitem"><div role="heading">Phone number</div><input aria-label="Your answer"></div>
   <div role="listitem"><div role="heading">Graduation Year</div><input aria-label="Your answer"></div>
+  <div role="listitem"><div role="heading">Preferred work location <span>*</span></div><input aria-label="Your answer"></div>
   <div role="button" id="gsubmit"><span>Submit</span></div>
   <script>document.getElementById("gsubmit").addEventListener("click", () => {
     document.querySelectorAll("input").forEach((i) => { i.value = ""; });
@@ -107,6 +109,7 @@ try {
     university: "Cambridge University",
     address: "12 St James's Square, London",
     country: "United Kingdom",
+    company: "Analytical Engines Ltd",
   });
 
   // 2. Autofill: a fresh copy of the form is filled on load.
@@ -115,10 +118,10 @@ try {
   const values = await page.$$eval("input", (els) => Object.fromEntries(els.map((e) => [e.id, e.value])));
   check("autofill: values on load", values, {
     name: "Ada Lovelace", email: "ada@example.com", phone: "+44 20 7946 0000",
-    college: "Cambridge University", company: "", ship: "12 St James's Square, London", pw: "", otp: "",
+    college: "Cambridge University", company: "Analytical Engines Ltd", father: "", ship: "12 St James's Square, London", pw: "", otp: "",
   });
   check("autofill: country select", await page.inputValue("#country"), "GB");
-  check("autofill: SF badge offered for weak 'Company Name' match", await page.locator(".smartfill-badge").count(), 1);
+  check("autofill: SF badge offered for weak 'Father's Name' match", await page.locator(".smartfill-badge").count(), 1);
 
   await page.goto(`${ORIGIN}/split`);
   await page.waitForTimeout(1200);
@@ -132,10 +135,17 @@ try {
   check("gform: phone autofilled", await gInputs.nth(0).inputValue(), "+44 20 7946 0000");
   await gInputs.nth(0).fill("+44 7700 900123");
   await gInputs.nth(1).fill("1835");
+  await gInputs.nth(2).fill("London or remote");
   await page.click("#gsubmit");
   await page.waitForTimeout(500);
   const afterG = (await storage()).smartfill_profile?.fields || {};
   check("gform: learned on scripted submit", [afterG.phone, afterG.graduation_year], ["+44 7700 900123", "1835"]);
+  check("gform: custom question saved by label",
+    (await storage()).smartfill_profile?.custom?.["preferred work location"],
+    { label: "Preferred work location", value: "London or remote", updated_at: (await storage()).smartfill_profile?.custom?.["preferred work location"]?.updated_at });
+  await page.goto(`${ORIGIN}/gform`);
+  await page.waitForTimeout(800);
+  check("gform: custom question refilled", await page.locator("input").nth(2).inputValue(), "London or remote");
 
   // Forms inside iframes are filled.
   await page.goto(`${ORIGIN}/host`);
@@ -151,6 +161,9 @@ try {
     items.map((i) => [i.querySelector(".key")?.textContent, i.querySelector(".val")?.textContent]));
   check("popup: profile rows", rows.length, Object.keys((await storage()).smartfill_profile.fields).length);
   check("popup: enabled toggle reflects storage", await popup.isChecked("#enabled"), true);
+  check("popup: custom field listed",
+    await popup.$$eval("#custom .item", (items) => items.map((i) => [i.querySelector(".key")?.textContent, i.querySelector(".val")?.textContent])),
+    [["Preferred work location", "London or remote"]]);
 
   // 4. Popup add/edit saves a new key.
   await popup.selectOption("#newKey", "cgpa");
@@ -177,8 +190,8 @@ try {
     const filled = results.reduce((sum, r) => sum + (r.result?.filled || 0), 0);
     return results.some((r) => r.result?.disabled) ? { filled, disabled: true } : { filled };
   }, ORIGIN);
-  check("fill now: response", await fillNow(), { filled: 6 });
-  check("fill now: company still empty", await page.inputValue("#company"), "");
+  check("fill now: response", await fillNow(), { filled: 7 });
+  check("fill now: father's name still empty", await page.inputValue("#father"), "");
   check("fill now: password untouched", await page.inputValue("#pw"), "");
   await page.goto(`${ORIGIN}/host`);
   await page.waitForTimeout(1200);
@@ -205,7 +218,7 @@ try {
   popup.once("dialog", (d) => d.accept());
   await popup.click("#clear");
   await popup.waitForTimeout(300);
-  check("popup: clear all", (await storage()).smartfill_profile?.fields, {});
+  check("popup: clear all", (await storage()).smartfill_profile, { fields: {} });
 } finally {
   await context.close();
   rmSync(userDataDir, { recursive: true, force: true });

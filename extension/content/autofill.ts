@@ -3,7 +3,7 @@
 (function () {
   // The popup may inject this file again into a tab that already has it.
   if (window.__SMARTFILL__.fillNow) return;
-  const { classify } = window.__SMARTFILL__;
+  const { classify, customFieldKey, labelSimilarity } = window.__SMARTFILL__;
 
   // Confidence thresholds (see classify() in detectFields.ts):
   // >= AUTOFILL_THRESHOLD: filled silently (if auto-fill is on), filled by
@@ -11,6 +11,13 @@
   // >= SUGGEST_THRESHOLD: only offered via the one-click "SF" badge.
   const AUTOFILL_THRESHOLD = 0.75;
   const SUGGEST_THRESHOLD = 0.5;
+
+  // Custom fields (no canonical type) are remembered by label. An identical
+  // label refills automatically; a label sharing this much of its words with a
+  // stored one is only suggested via the badge.
+  const CUSTOM_SIMILAR_THRESHOLD = 0.75;
+  const CUSTOM_VALUE_MAX = 500;
+  const CUSTOM_MAX_ENTRIES = 200;
 
   const INPUT_SEL = 'input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]), textarea, select, [role="textbox"], [contenteditable="true"]';
 
@@ -61,14 +68,24 @@
     // Read the values synchronously: by the time storage answers, a submit may
     // have navigated away or a single-page app may have cleared the form.
     const collected: Record<string, string> = {};
-    for (const el of allFields(root)) {
-      const { canonicalField, confidence } = classify(el);
+    const customCollected: Record<string, { label: string; value: string }> = {};
+    const fields = allFields(root);
+    // Custom fields are only learned from real forms: not from single-input
+    // search boxes, and not from login forms (anything with a password field).
+    const learnCustom = fields.length >= 2 && !root.querySelector('input[type="password"]');
+    for (const el of fields) {
       const val = fieldValue(el);
-      if (canonicalField && confidence >= AUTOFILL_THRESHOLD && val) {
+      if (!val) continue;
+      const { canonicalField, confidence } = classify(el);
+      if (canonicalField && confidence >= AUTOFILL_THRESHOLD) {
         collected[canonicalField] = val;
+        continue;
       }
+      if (!learnCustom || val.length > CUSTOM_VALUE_MAX) continue;
+      const custom = customFieldKey(el);
+      if (custom) customCollected[custom.key] = { label: custom.label, value: val };
     }
-    if (Object.keys(collected).length === 0) return;
+    if (Object.keys(collected).length === 0 && Object.keys(customCollected).length === 0) return;
 
     chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data) => {
       const settings = data.smartfill_settings || {};
@@ -76,12 +93,22 @@
       if (data.enabled === false) return;
       if (settings.autoSaveEnabled === false) return;
 
+      const now = new Date().toISOString();
       const existingProfile = data.smartfill_profile || { fields: {} };
       const mergedFields = { ...existingProfile.fields, ...collected };
+      const mergedCustom: Record<string, SmartFillCustomField> = { ...(existingProfile.custom || {}) };
+      for (const [key, entry] of Object.entries(customCollected)) {
+        mergedCustom[key] = { ...entry, updated_at: now };
+      }
+      // Keep the most recently used entries if the list grows too long.
+      const customEntries = Object.entries(mergedCustom)
+        .sort((a, b) => b[1].updated_at.localeCompare(a[1].updated_at))
+        .slice(0, CUSTOM_MAX_ENTRIES);
       const mergedProfile = {
         ...existingProfile,
         fields: mergedFields,
-        updated_at: new Date().toISOString(),
+        custom: Object.fromEntries(customEntries),
+        updated_at: now,
       };
 
       chrome.storage.local.set({ smartfill_profile: mergedProfile });
@@ -219,14 +246,45 @@
     const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
     if (setter) setter.call(control, value);
     else control.value = value;
+    // Typed inputs (date, number, email) silently reject values in the wrong
+    // format; leave those alone instead of firing events on an empty field.
+    if (control.value === "" && value !== "") return false;
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
     return true;
   }
 
+  // Decides what to put in a field: a confident canonical match first, then an
+  // exact custom-label match, then weaker suggestions (badge only).
+  function resolveFill(el: HTMLElement, profile: SmartFillProfile): { value: string; strong: boolean } | null {
+    const fields = profile.fields || {};
+    const custom = profile.custom || {};
+    const { canonicalField, confidence } = classify(el);
+    if (canonicalField && confidence >= AUTOFILL_THRESHOLD) {
+      const value = getProfileValue(fields, canonicalField);
+      if (value) return { value, strong: true };
+    }
+    const key = Object.keys(custom).length > 0 ? customFieldKey(el) : null;
+    if (key && custom[key.key]) return { value: custom[key.key].value, strong: true };
+    if (canonicalField && confidence >= SUGGEST_THRESHOLD) {
+      const value = getProfileValue(fields, canonicalField);
+      if (value) return { value, strong: false };
+    }
+    if (key) {
+      let best: SmartFillCustomField | null = null;
+      let bestScore = CUSTOM_SIMILAR_THRESHOLD;
+      for (const [storedKey, entry] of Object.entries(custom)) {
+        const score = labelSimilarity(key.key, storedKey);
+        if (score >= bestScore) { best = entry; bestScore = score; }
+      }
+      if (best) return { value: best.value, strong: false };
+    }
+    return null;
+  }
+
   function scan() {
     chrome.storage.local.get(["smartfill_profile", "smartfill_settings", "enabled"], (data) => {
-      const profileFields = data.smartfill_profile?.fields || {};
+      const profile = data.smartfill_profile || {};
       const settings = data.smartfill_settings || { autoFillEnabled: true };
       // Respect the global enabled toggle from the popup
       if (data.enabled === false) return;
@@ -236,13 +294,11 @@
         if (fieldValue(el)) continue;
         if (el.dataset.smartfill === "1") continue;
 
-        const { canonicalField, confidence } = classify(el);
-        if (!canonicalField || confidence < SUGGEST_THRESHOLD) continue;
+        const fill = resolveFill(el, profile);
+        if (!fill) continue;
+        const { value } = fill;
 
-        const value = getProfileValue(profileFields, canonicalField);
-        if (!value) continue;
-
-        if (confidence >= AUTOFILL_THRESHOLD) {
+        if (fill.strong) {
           if (settings.autoFillEnabled) {
             setNativeValue(el, value);
             el.dataset.smartfill = "1";
@@ -264,7 +320,7 @@
   obs.observe(document.documentElement, { childList: true, subtree: true });
 
   // "Fill this page": fills every empty field matched at AUTOFILL_THRESHOLD
-  // or above, even when silent auto-fill is off. It writes the whole page with
+  // or above (or by an exact custom label), even when silent auto-fill is off. It writes the whole page with
   // no per-field review, so it uses the same bar as silent auto-fill; weaker
   // matches keep their "SF" badge for one-click confirmation.
   function fillNow(): Promise<{ filled: number; disabled?: boolean }> {
@@ -274,16 +330,14 @@
           resolve({ filled: 0, disabled: true });
           return;
         }
-        const profileFields = data.smartfill_profile?.fields || {};
+        const profile = data.smartfill_profile || {};
         let filled = 0;
         for (const el of allFields()) {
           if (fieldValue(el)) continue;
-          const { canonicalField, confidence } = classify(el);
-          if (!canonicalField || confidence < AUTOFILL_THRESHOLD) continue;
-          const value = getProfileValue(profileFields, canonicalField);
-          if (!value) continue;
+          const fill = resolveFill(el, profile);
+          if (!fill || !fill.strong) continue;
           try {
-            if (setNativeValue(el, value)) {
+            if (setNativeValue(el, fill.value)) {
               el.dataset.smartfill = "1";
               filled++;
             }

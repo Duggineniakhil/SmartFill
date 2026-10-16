@@ -120,3 +120,69 @@ describe("SMARTFILL_FILL_NOW", () => {
     expect(response).toEqual({ filled: 0, disabled: true });
   });
 });
+
+describe("custom fields", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 300, height: 40, top: 0, right: 300, bottom: 40, left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+  });
+
+  type SetMock = ReturnType<typeof vi.fn>;
+  const storageSet = () => (window as unknown as { chrome: { storage: { local: { set: SetMock } } } }).chrome.storage.local.set;
+  const submit = () => document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true }));
+  const savedProfile = (set: SetMock) => set.mock.calls.at(-1)?.[0]?.smartfill_profile;
+
+  it("learns answers to unknown questions by label", () => {
+    document.body.innerHTML = `<form>
+      <div><label for="e">Email</label><input id="e" value="ada@example.com" /></div>
+      <div><label for="l">Preferred work location *</label><input id="l" value="London" /></div>
+    </form>`;
+    loadContentScripts({ smartfill_profile: { fields: {} } });
+    submit();
+    const profile = savedProfile(storageSet());
+    expect(profile.fields).toEqual({ email: "ada@example.com" });
+    expect(profile.custom).toEqual({
+      "preferred work location": { label: "Preferred work location", value: "London", updated_at: expect.any(String) },
+    });
+  });
+
+  const stored = {
+    smartfill_profile: {
+      fields: {},
+      custom: { "preferred work location": { label: "Preferred work location", value: "London", updated_at: "2026-01-01" } },
+    },
+  };
+
+  it("refills an identical label", async () => {
+    document.body.innerHTML = `<form><div><label for="l">Preferred Work Location</label><input id="l" /></div></form>`;
+    expect(await fillNow(loadContentScripts(stored))).toEqual({ filled: 1 });
+    expect((document.getElementById("l") as HTMLInputElement).value).toBe("London");
+  });
+
+  it("only suggests (badge) for a similar label", async () => {
+    document.body.innerHTML = `<form><div><label for="l">Preferred location for work</label><input id="l" /></div></form>`;
+    const listener = loadContentScripts({ ...stored, smartfill_settings: { autoFillEnabled: true } });
+    expect(await fillNow(listener)).toEqual({ filled: 0 });
+    vi.advanceTimersByTime(300); // let the page scan run
+    expect((document.getElementById("l") as HTMLInputElement).value).toBe("");
+    expect(document.querySelector(".smartfill-badge")).not.toBeNull();
+  });
+
+  it.each([
+    ["login forms", `<div><label for="u">Workspace</label><input id="u" value="acme" /></div>
+      <div><label for="p">Password</label><input id="p" type="password" value="x" /></div>`],
+    ["single-field forms", `<div><label for="q">Workspace</label><input id="q" value="acme" /></div>`],
+    ["search, coupon and message fields", `<div><label for="a">Search jobs</label><input id="a" value="x" /></div>
+      <div><label for="b">Coupon code</label><input id="b" value="SAVE10" /></div>
+      <div><label for="c">Message</label><textarea id="c">hi</textarea></div>`],
+    ["long answers", `<div><label for="a">Why us?</label><textarea id="a">${"x".repeat(600)}</textarea></div>
+      <div><label for="b">Cover letter</label><textarea id="b">${"y".repeat(600)}</textarea></div>`],
+  ])("never learns custom fields from %s", (_name, html) => {
+    document.body.innerHTML = `<form>${html}</form>`;
+    loadContentScripts({ smartfill_profile: { fields: {} } });
+    submit();
+    expect(storageSet()).not.toHaveBeenCalled();
+  });
+});
