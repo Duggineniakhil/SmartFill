@@ -136,32 +136,33 @@ if (fillNowEl) {
             setTimeout(() => { if (btn)
                 btn.textContent = txt; }, 1600);
         };
-        const sendFillRequest = () => new Promise((resolve, reject) => {
-            chrome.tabs.sendMessage(tab.id, { type: "SMARTFILL_FILL_NOW" }, (res) => {
-                const error = chrome.runtime.lastError;
-                if (error)
-                    reject(error);
-                else
-                    resolve(res);
-            });
+        // Runs in the content scripts' isolated world of every frame, so forms in
+        // iframes (Greenhouse, embedded Google Forms) are filled too.
+        const fillAllFrames = () => chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: () => (window.__SMARTFILL__?.fillNow ? window.__SMARTFILL__.fillNow() : null),
         });
         try {
-            showResult(await sendFillRequest());
-        }
-        catch {
-            try {
+            let results = await fillAllFrames();
+            // Tabs opened before the extension was installed or reloaded have no
+            // content script yet: inject it into just those frames, then retry.
+            const missing = results.filter((r) => r.result == null).map((r) => r.frameId ?? 0);
+            if (missing.length > 0) {
                 await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
+                    target: { tabId: tab.id, frameIds: missing },
                     files: ["content/detectFields.js", "content/autofill.js"],
                 });
-                showResult(await sendFillRequest());
+                results = await fillAllFrames();
             }
-            catch {
-                if (btn)
-                    btn.textContent = "Cannot fill this page";
-                setTimeout(() => { if (btn)
-                    btn.textContent = txt; }, 1600);
-            }
+            const filled = results.reduce((sum, r) => sum + (r.result?.filled || 0), 0);
+            const disabled = results.some((r) => r.result?.disabled);
+            showResult({ filled, disabled });
+        }
+        catch {
+            if (btn)
+                btn.textContent = "Cannot fill this page";
+            setTimeout(() => { if (btn)
+                btn.textContent = txt; }, 1600);
         }
     });
 }

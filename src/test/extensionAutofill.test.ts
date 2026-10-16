@@ -32,7 +32,7 @@ describe("SmartFill content scripts", () => {
     });
   });
 
-  it("fills Google Forms-style fields from the saved profile", () => {
+  it("fills Google Forms-style fields from the saved profile", async () => {
     let messageListener: ((message: unknown, sender: unknown, send: (response: unknown) => void) => boolean) | undefined;
     const chromeMock = {
       storage: {
@@ -71,6 +71,7 @@ describe("SmartFill content scripts", () => {
       {},
       (value) => { response = value as { filled: number }; },
     );
+    await Promise.resolve(); // the reply is sent from a resolved promise
 
     const values = Array.from(document.querySelectorAll("input"), (input) => input.value);
     expect(values).toEqual(["Duggineni Akhil", "akhilwork611@gmail.com", "9876543210"]);

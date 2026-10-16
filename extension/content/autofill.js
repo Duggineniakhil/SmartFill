@@ -1,6 +1,9 @@
 // SmartFill content script - capture + autofill
 "use strict";
 (function () {
+    // The popup may inject this file again into a tab that already has it.
+    if (window.__SMARTFILL__.fillNow)
+        return;
     const { classify } = window.__SMARTFILL__;
     // Confidence thresholds (see classify() in detectFields.ts):
     // >= AUTOFILL_THRESHOLD: filled silently (if auto-fill is on), filled by
@@ -23,6 +26,12 @@
         });
     }
     function fieldValue(el) {
+        if (el instanceof HTMLSelectElement) {
+            // A placeholder option ("Select…", value "") counts as empty. Store the
+            // visible text so the value can be matched against other sites' options.
+            const opt = el.selectedOptions[0];
+            return opt && opt.value ? String(opt.text || opt.value).trim() : "";
+        }
         if ("value" in el)
             return String(el.value || "").trim();
         return String(el.innerText || el.textContent || "").trim();
@@ -33,8 +42,6 @@
         const synonyms = {
             university: ["college", "school"],
             postal_code: ["zip", "zip_code"],
-            skills: ["resume"],
-            resume: ["skills"],
             cgpa: ["gpa"],
         };
         const list = synonyms[key] || [];
@@ -42,25 +49,36 @@
             if (profileFields[syn])
                 return profileFields[syn];
         }
+        // Derive name parts when only the other form was learned.
+        const full = profileFields.full_name?.trim();
+        if (key === "first_name" && full)
+            return full.split(/\s+/)[0];
+        if (key === "last_name" && full && /\s/.test(full))
+            return full.split(/\s+/).slice(1).join(" ");
+        if (key === "full_name" && profileFields.first_name) {
+            return [profileFields.first_name, profileFields.last_name].filter(Boolean).join(" ");
+        }
         return undefined;
     }
     function captureFrom(root) {
+        // Read the values synchronously: by the time storage answers, a submit may
+        // have navigated away or a single-page app may have cleared the form.
+        const collected = {};
+        for (const el of allFields(root)) {
+            const { canonicalField, confidence } = classify(el);
+            const val = fieldValue(el);
+            if (canonicalField && confidence >= AUTOFILL_THRESHOLD && val) {
+                collected[canonicalField] = val;
+            }
+        }
+        if (Object.keys(collected).length === 0)
+            return;
         chrome.storage.local.get(["smartfill_settings", "smartfill_profile", "enabled"], (data) => {
             const settings = data.smartfill_settings || {};
             // Respect the global enabled toggle from the popup
             if (data.enabled === false)
                 return;
             if (settings.autoSaveEnabled === false)
-                return;
-            const collected = {};
-            for (const el of allFields(root)) {
-                const { canonicalField, confidence } = classify(el);
-                const val = fieldValue(el);
-                if (canonicalField && confidence >= AUTOFILL_THRESHOLD && val) {
-                    collected[canonicalField] = val;
-                }
-            }
-            if (Object.keys(collected).length === 0)
                 return;
             const existingProfile = data.smartfill_profile || { fields: {} };
             const mergedFields = { ...existingProfile.fields, ...collected };
@@ -79,6 +97,31 @@
         }
         catch {
             // Ignore pages that block field inspection during submit.
+        }
+    }, true);
+    // Google Forms and many single-page apps submit from a scripted button and
+    // never fire a native submit event, so also learn when a submit-like control
+    // is clicked. Forms with a real submit button are captured twice with the
+    // same values, which is harmless.
+    const SUBMIT_TEXT = /^(submit|send|apply|apply now|next|continue|save|save and continue|register|sign up|finish|done)$/i;
+    document.addEventListener("click", (e) => {
+        try {
+            const target = e.target instanceof Element ? e.target : null;
+            const control = target?.closest('button, input[type="submit"], [role="button"]');
+            if (!control)
+                return;
+            // Real submit buttons inside a <form> are handled by the submit listener.
+            if (control.type === "submit" && control.closest("form"))
+                return;
+            const text = control instanceof HTMLInputElement
+                ? control.value
+                : control.innerText || control.textContent || control.getAttribute("aria-label") || "";
+            if (!SUBMIT_TEXT.test(text.trim()))
+                return;
+            captureFrom(control.closest("form") || document);
+        }
+        catch {
+            // Never let learning break the page's own click handling.
         }
     }, true);
     const BADGE_CLASS = "smartfill-badge";
@@ -104,12 +147,24 @@
             ev.preventDefault();
             ev.stopPropagation();
             setNativeValue(el, value);
-            wrap.remove();
+            cleanup();
             el.dataset.smartfillFilled = "1";
         });
         wrap.appendChild(btn);
         document.body.appendChild(wrap);
+        const ro = new ResizeObserver(position);
+        function cleanup() {
+            wrap.remove();
+            ro.disconnect();
+            window.removeEventListener("scroll", position, true);
+            window.removeEventListener("resize", position);
+        }
         function position() {
+            // Single-page apps remove fields without notice; drop the orphaned badge.
+            if (!el.isConnected) {
+                cleanup();
+                return;
+            }
             const r = el.getBoundingClientRect();
             if (r.width === 0 && r.height === 0) {
                 wrap.style.display = "none";
@@ -120,7 +175,6 @@
             wrap.style.left = window.scrollX + r.right - 28 + "px";
         }
         position();
-        const ro = new ResizeObserver(position);
         try {
             ro.observe(el);
         }
@@ -130,9 +184,34 @@
         window.addEventListener("scroll", position, true);
         window.addEventListener("resize", position);
         el.addEventListener("input", () => { if (fieldValue(el))
-            wrap.remove(); }, { once: true });
+            cleanup(); }, { once: true });
     }
+    function normalizeOption(s) {
+        return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    }
+    // Pick the option whose text or value matches the stored value: exact first,
+    // then a whole-word containment ("India" ~ "India (+91)"). Never guesses.
+    function findOption(select, value) {
+        const want = normalizeOption(value);
+        if (!want)
+            return undefined;
+        const options = Array.from(select.options).filter((o) => o.value !== "" && !o.disabled);
+        const exact = options.find((o) => normalizeOption(o.text) === want || normalizeOption(o.value) === want);
+        if (exact)
+            return exact;
+        return options.find((o) => {
+            const text = normalizeOption(o.text);
+            return text.length > 1 && (` ${text} `.includes(` ${want} `) || ` ${want} `.includes(` ${text} `));
+        });
+    }
+    // Returns false when the value could not be applied (no matching <option>).
     function setNativeValue(el, value) {
+        if (el instanceof HTMLSelectElement) {
+            const option = findOption(el, value);
+            if (!option)
+                return false;
+            value = option.value;
+        }
         if (el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('role') === 'textbox') {
             el.focus();
             el.innerText = value;
@@ -143,7 +222,7 @@
             el.dispatchEvent(new Event("input", { bubbles: true }));
             el.dispatchEvent(new Event("change", { bubbles: true }));
             el.blur();
-            return;
+            return true;
         }
         const control = el;
         const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype
@@ -156,6 +235,7 @@
             control.value = value;
         el.dispatchEvent(new Event("input", { bubbles: true }));
         el.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
     }
     function scan() {
         chrome.storage.local.get(["smartfill_profile", "smartfill_settings", "enabled"], (data) => {
@@ -182,7 +262,7 @@
                         el.dataset.smartfill = "1";
                     }
                 }
-                else {
+                else if (!(el instanceof HTMLSelectElement) || findOption(el, value)) {
                     makeBadge(el, value);
                 }
             }
@@ -196,11 +276,15 @@
     scheduleScan();
     const obs = new MutationObserver(scheduleScan);
     obs.observe(document.documentElement, { childList: true, subtree: true });
-    chrome.runtime.onMessage.addListener((msg, _sender, send) => {
-        if (typeof msg === "object" && msg !== null && "type" in msg && msg.type === "SMARTFILL_FILL_NOW") {
+    // "Fill this page": fills every empty field matched at AUTOFILL_THRESHOLD
+    // or above, even when silent auto-fill is off. It writes the whole page with
+    // no per-field review, so it uses the same bar as silent auto-fill; weaker
+    // matches keep their "SF" badge for one-click confirmation.
+    function fillNow() {
+        return new Promise((resolve) => {
             chrome.storage.local.get(["smartfill_profile", "enabled"], (data) => {
                 if (data.enabled === false) {
-                    send({ filled: 0, disabled: true });
+                    resolve({ filled: 0, disabled: true });
                     return;
                 }
                 const profileFields = data.smartfill_profile?.fields || {};
@@ -208,9 +292,6 @@
                 for (const el of allFields()) {
                     if (fieldValue(el))
                         continue;
-                    // "Fill this page" writes every matched field in one go with no
-                    // per-field review, so it uses the same bar as silent auto-fill.
-                    // Weaker matches keep their "SF" badge for one-click confirmation.
                     const { canonicalField, confidence } = classify(el);
                     if (!canonicalField || confidence < AUTOFILL_THRESHOLD)
                         continue;
@@ -218,15 +299,27 @@
                     if (!value)
                         continue;
                     try {
-                        setNativeValue(el, value);
-                        filled++;
+                        if (setNativeValue(el, value)) {
+                            el.dataset.smartfill = "1";
+                            filled++;
+                        }
                     }
                     catch {
                         // Continue filling other matched fields if one element rejects updates.
                     }
                 }
-                send({ filled });
+                resolve({ filled });
             });
+        });
+    }
+    // The popup calls fillNow() in every frame via chrome.scripting and sums the
+    // counts; the message is kept for callers that only target the top frame.
+    window.__SMARTFILL__.fillNow = fillNow;
+    chrome.runtime.onMessage.addListener((msg, _sender, send) => {
+        if (window !== window.top)
+            return;
+        if (typeof msg === "object" && msg !== null && "type" in msg && msg.type === "SMARTFILL_FILL_NOW") {
+            fillNow().then(send);
             return true;
         }
     });

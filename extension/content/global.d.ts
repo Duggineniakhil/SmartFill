@@ -60,7 +60,11 @@ declare global {
       sendMessage: (tabId: number, message: unknown, callback: (response: unknown) => void) => void;
     };
     scripting: {
-      executeScript: (details: { target: { tabId: number }; files: string[] }) => Promise<unknown>;
+      executeScript: <T = unknown>(details: {
+        target: { tabId: number; allFrames?: boolean; frameIds?: number[] };
+        files?: string[];
+        func?: () => T | Promise<T>;
+      }) => Promise<Array<{ frameId?: number; result?: Awaited<T> }>>;
     };
   }
 
@@ -70,6 +74,7 @@ declare global {
       isForbidden: (el: HTMLElement, hints: SmartFillFieldHints) => boolean;
       fieldHints: (el: HTMLElement) => SmartFillFieldHints;
       ALIASES: Record<string, string[]>;
+      fillNow?: () => Promise<{ filled: number; disabled?: boolean }>;
     };
   }
   declare const chrome: ChromeApi;
