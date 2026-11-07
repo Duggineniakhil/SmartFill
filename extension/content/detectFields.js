@@ -85,6 +85,21 @@ function isForbidden(el, hints) {
     const blob = normalize(raw.replace(/([a-z0-9])([A-Z])/g, '$1 $2'));
     return FORBIDDEN_RE.test(blob) || FORBIDDEN_SUBSTRINGS.some((k) => blob.includes(k));
 }
+// Search, filter and jump-to boxes ("Find a repository…", "Filter feed",
+// name="q") are page tools, not questions about the user: never fill or learn
+// them. Only the field's own attributes are checked, not surrounding headings.
+const SEARCH_WORDS = ['search', 'find', 'filter', 'jump', 'lookup', 'q', 'query'];
+function isSearchLike(el, hints) {
+    if (el.type === 'search')
+        return true;
+    const role = el.getAttribute('role');
+    if (role === 'searchbox' || role === 'combobox')
+        return true;
+    if (el.closest('[role="search"], search'))
+        return true;
+    const own = [hints.ariaLabel, hints.placeholder, hints.name, hints.id].join(' ');
+    return normalize(own.replace(/([a-z0-9])([A-Z])/g, '$1 $2')).split(' ').some((w) => SEARCH_WORDS.includes(w));
+}
 function fieldHints(el) {
     const hints = { label: '', placeholder: '', name: '', id: '', ariaLabel: '' };
     if (el.name)
@@ -233,7 +248,7 @@ function evaluateRules(inputTokens) {
 }
 function classify(el) {
     const hints = fieldHints(el);
-    if (isForbidden(el, hints)) {
+    if (isForbidden(el, hints) || isSearchLike(el, hints)) {
         return { canonicalField: null, confidence: 0 };
     }
     const normalizedSources = {
@@ -264,11 +279,8 @@ const CUSTOM_SKIP_WORDS = [
     'comments', 'feedback', 'subject', 'note', 'notes', 'reply', 'captcha', 'code',
 ];
 function customFieldKey(el) {
-    const type = el.type;
-    if (type === 'search' || type === 'password' || el.getAttribute('role') === 'searchbox')
-        return null;
     const hints = fieldHints(el);
-    if (isForbidden(el, hints))
+    if (isForbidden(el, hints) || isSearchLike(el, hints))
         return null;
     const candidates = [
         ...hints.label.split('\n'),

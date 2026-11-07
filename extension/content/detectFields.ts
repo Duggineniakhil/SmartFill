@@ -98,6 +98,20 @@ function isForbidden(el: HTMLElement, hints: FieldHints): boolean {
   return FORBIDDEN_RE.test(blob) || FORBIDDEN_SUBSTRINGS.some((k) => blob.includes(k));
 }
 
+// Search, filter and jump-to boxes ("Find a repository…", "Filter feed",
+// name="q") are page tools, not questions about the user: never fill or learn
+// them. Only the field's own attributes are checked, not surrounding headings.
+const SEARCH_WORDS = ['search', 'find', 'filter', 'jump', 'lookup', 'q', 'query'];
+
+function isSearchLike(el: HTMLElement, hints: FieldHints): boolean {
+  if ((el as HTMLInputElement).type === 'search') return true;
+  const role = el.getAttribute('role');
+  if (role === 'searchbox' || role === 'combobox') return true;
+  if (el.closest('[role="search"], search')) return true;
+  const own = [hints.ariaLabel, hints.placeholder, hints.name, hints.id].join(' ');
+  return normalize(own.replace(/([a-z0-9])([A-Z])/g, '$1 $2')).split(' ').some((w) => SEARCH_WORDS.includes(w));
+}
+
 function fieldHints(el: HTMLElement): FieldHints {
   const hints: FieldHints = { label: '', placeholder: '', name: '', id: '', ariaLabel: '' };
   if ((el as HTMLInputElement).name) hints.name = (el as HTMLInputElement).name;
@@ -259,7 +273,7 @@ function evaluateRules(inputTokens: string[]): MatchResult {
 function classify(el: HTMLElement): MatchResult {
   const hints = fieldHints(el);
 
-  if (isForbidden(el, hints)) {
+  if (isForbidden(el, hints) || isSearchLike(el, hints)) {
     return { canonicalField: null, confidence: 0 };
   }
 
@@ -300,10 +314,8 @@ interface CustomFieldKey {
 }
 
 function customFieldKey(el: HTMLElement): CustomFieldKey | null {
-  const type = (el as HTMLInputElement).type;
-  if (type === 'search' || type === 'password' || el.getAttribute('role') === 'searchbox') return null;
   const hints = fieldHints(el);
-  if (isForbidden(el, hints)) return null;
+  if (isForbidden(el, hints) || isSearchLike(el, hints)) return null;
 
   const candidates = [
     ...hints.label.split('\n'),

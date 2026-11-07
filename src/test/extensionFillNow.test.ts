@@ -186,3 +186,64 @@ describe("custom fields", () => {
     expect(storageSet()).not.toHaveBeenCalled();
   });
 });
+
+describe("search and filter boxes (GitHub dashboard)", () => {
+  const GITHUB = `
+    <header><input type="text" name="q" aria-label="Search or jump to…" /></header>
+    <aside><div><div><h2>Top repositories</h2><a href="/new">New</a></div>
+      <input type="text" id="dashboard-repos-filter-left" placeholder="Find a repository…"
+        aria-label="Find a repository…" autocomplete="off" /></div></aside>
+    <main><input type="text" aria-label="Filter feed" /><button>Next</button><button>Done</button></main>`;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 300, height: 40, top: 0, right: 300, bottom: 40, left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+  });
+
+  it("does not learn filter boxes when a page button like Next is clicked", () => {
+    document.body.innerHTML = GITHUB;
+    loadContentScripts({ smartfill_profile: { fields: {} } });
+    const set = (window as unknown as { chrome: { storage: { local: { set: ReturnType<typeof vi.fn> } } } }).chrome.storage.local.set;
+    document.querySelectorAll("input").forEach((i) => { i.value = "SmartFill"; });
+    document.querySelectorAll("main button").forEach((b) => (b as HTMLButtonElement).click());
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("never fills search or filter boxes, even from an entry saved by an older version", async () => {
+    document.body.innerHTML = GITHUB;
+    const listener = loadContentScripts({
+      smartfill_profile: {
+        fields: { full_name: "Ada Lovelace", country: "India" },
+        custom: { "top repositories": { label: "Top repositories", value: "SmartFill", updated_at: "2026-11-01" } },
+      },
+      smartfill_settings: { autoFillEnabled: true },
+    });
+    expect(await fillNow(listener)).toEqual({ filled: 0 });
+    vi.advanceTimersByTime(300);
+    expect(Array.from(document.querySelectorAll("input"), (i) => i.value)).toEqual(["", "", ""]);
+    expect(document.querySelector(".smartfill-badge")).toBeNull();
+  });
+
+  it.each([
+    `<input type="search" aria-label="Country" />`,
+    `<input placeholder="Search country" />`,
+    `<div role="search"><label for="x">City</label><input id="x" /></div>`,
+    `<input role="combobox" aria-label="Country" />`,
+  ])("does not fill %s", async (html) => {
+    document.body.innerHTML = `<form>${html}</form>`;
+    const listener = loadContentScripts({ smartfill_profile: { fields: { country: "India", city: "Pune" } } });
+    expect(await fillNow(listener)).toEqual({ filled: 0 });
+  });
+
+  it("still learns from a formless section with a clear Submit button", () => {
+    document.body.innerHTML = `<section>
+      <div><label for="a">Email</label><input id="a" value="ada@example.com" /></div>
+      <div role="button" id="go">Submit</div></section>`;
+    loadContentScripts({ smartfill_profile: { fields: {} } });
+    const set = (window as unknown as { chrome: { storage: { local: { set: ReturnType<typeof vi.fn> } } } }).chrome.storage.local.set;
+    document.getElementById("go")!.click();
+    expect(set.mock.calls.at(-1)?.[0]?.smartfill_profile?.fields).toEqual({ email: "ada@example.com" });
+  });
+});

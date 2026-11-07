@@ -133,6 +133,7 @@
     // is clicked. Forms with a real submit button are captured twice with the
     // same values, which is harmless.
     const SUBMIT_TEXT = /^(submit|send|apply|apply now|next|continue|save|save and continue|register|sign up|finish|done)$/i;
+    const FORMLESS_SUBMIT_TEXT = /^(submit|send|apply|apply now|register|sign up|finish)$/i;
     document.addEventListener("click", (e) => {
         try {
             const target = e.target instanceof Element ? e.target : null;
@@ -147,7 +148,23 @@
                 : control.innerText || control.textContent || control.getAttribute("aria-label") || "";
             if (!SUBMIT_TEXT.test(text.trim()))
                 return;
-            captureFrom(control.closest("form") || document);
+            const form = control.closest("form");
+            if (form) {
+                captureFrom(form);
+                return;
+            }
+            // Outside a <form>, "Next", "Save" or "Done" are usually pagination or
+            // page tools (GitHub's feed, dashboards), so only clear submit wording
+            // counts, and only the nearest section holding fields is read, never the
+            // whole page.
+            if (!FORMLESS_SUBMIT_TEXT.test(text.trim()))
+                return;
+            let section = control.parentElement;
+            while (section && section !== document.body && allFields(section).length === 0) {
+                section = section.parentElement;
+            }
+            if (section)
+                captureFrom(section);
         }
         catch {
             // Never let learning break the page's own click handling.
