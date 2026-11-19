@@ -384,7 +384,7 @@ let aiJob: SmartFillJobInfo | null = null;
 let aiTabId = 0;
 
 function aiConfigured(s?: SmartFillAiSettings) {
-  return Boolean((s?.provider === "groq" ? s?.groqKey : s?.geminiKey)?.trim());
+  return Boolean(s?.geminiKey?.trim() || s?.groqKey?.trim());
 }
 
 function aiOut(build: (box: HTMLElement) => void) {
@@ -416,7 +416,7 @@ function renderAiMatch(m: SmartFillAiMatch) {
     const pill = document.createElement("span");
     pill.className = `score ${m.verdict}`;
     pill.textContent = `✦ ${m.score}% AI match`;
-    head.append(pill, div("muted", `${m.provider === "groq" ? "Groq" : "Gemini"} · ${shortDate(m.at)}`));
+    head.append(pill, div("muted", `${m.provider === "groq" ? "Groq" : "Gemini"}${m.fallbackFrom ? ` (${m.fallbackFrom} was unavailable)` : ""} · ${shortDate(m.at)}`));
     box.append(head);
     if (m.summary) box.append(div("", m.summary));
     if (m.strengths.length) box.append(labelled("Strengths:", m.strengths.join("; ")));

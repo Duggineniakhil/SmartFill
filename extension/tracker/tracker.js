@@ -41,7 +41,7 @@ const PROFILE_DEFAULTS = {
     [KEY]: {}, smartfill_job_requirements: {}, smartfill_profile: { fields: {} }, smartfill_resume: { text: "", updated_at: "" },
     smartfill_ai: {}, smartfill_ai_matches: {}, smartfill_job_texts: {},
 };
-const aiReady = () => Boolean((aiSettings.provider === "groq" ? aiSettings.groqKey : aiSettings.geminiKey)?.trim());
+const aiReady = () => Boolean(aiSettings.geminiKey?.trim() || aiSettings.groqKey?.trim());
 function readFacts(d) {
     resumeText = d.smartfill_resume?.text || "";
     facts = matchApi()?.userFacts(d.smartfill_profile?.fields || {}, resumeText) || null;

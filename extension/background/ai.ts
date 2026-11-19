@@ -46,12 +46,23 @@
     constructor(code: string, message: string) { super(message); this.code = code; }
   }
 
-  function activeConfig(s: AiSettings | undefined) {
-    const provider: Provider = s?.provider === "groq" ? "groq" : "gemini";
+  function configFor(s: AiSettings | undefined, provider: Provider) {
     const key = (provider === "groq" ? s?.groqKey : s?.geminiKey)?.trim() || "";
     const saved = (provider === "groq" ? s?.groqModel : s?.geminiModel)?.trim() || "";
     const model = saved && !RETIRED_MODELS.has(saved) ? saved : DEFAULT_MODELS[provider];
     return { provider, key, model };
+  }
+
+  function activeConfig(s: AiSettings | undefined) {
+    return configFor(s, s?.provider === "groq" ? "groq" : "gemini");
+  }
+
+  // The chosen provider first, then the other one as a fallback — each only
+  // if it has a key.
+  function providerChain(s: AiSettings | undefined) {
+    const first = activeConfig(s);
+    const second = configFor(s, first.provider === "groq" ? "gemini" : "groq");
+    return [first, second].filter((c) => c.key);
   }
 
   function clip(s: string | undefined, max: number): string {
@@ -211,6 +222,7 @@
     if (res.status === 401 || res.status === 403 || /api key/i.test(detail)) {
       return new AiError("bad_key", `${name} rejected the API key. Check it in AI settings.`);
     }
+    if (res.status === 503 || res.status === 529) return new AiError("busy", `${name} is overloaded right now. Try again in a minute.`);
     if (res.status === 429) return new AiError("rate_limit", `${name} rate limit or quota reached. Wait a minute and try again.`);
     if (res.status === 404 || /model.*(not found|does not exist|decommissioned|not supported)/i.test(detail)) {
       return new AiError("bad_model", `${name} doesn't offer that model any more${detail ? ` (${detail})` : ""}. Change the model in AI settings, or clear it to use the default.`);
@@ -218,13 +230,41 @@
     return new AiError("http", `${name} error ${res.status}${detail ? `: ${detail}` : ""}`);
   }
 
+  interface Completion { text: string; provider: Provider; model: string; fallbackFrom?: string }
+
+  // Asks the chosen provider; if that fails for any reason and the other
+  // provider has a key, asks that one instead.
   async function complete(
     settings: AiSettings | undefined,
     prompt: { system: string; user: string },
     fetchImpl: typeof fetch = fetch,
+    check: (text: string) => void = () => {},
+  ): Promise<Completion> {
+    const chain = providerChain(settings);
+    if (!chain.length) throw new AiError("no_key", "Add a Gemini or Groq API key in AI settings first.");
+    const errors: AiError[] = [];
+    for (const cfg of chain) {
+      try {
+        const text = await completeWith(cfg, prompt, fetchImpl);
+        check(text);
+        const failed = errors[0] && chain[0].provider !== cfg.provider ? providerName(chain[0].provider) : undefined;
+        return { text, provider: cfg.provider, model: cfg.model, ...(failed ? { fallbackFrom: failed } : {}) };
+      } catch (e) {
+        const err = e instanceof AiError ? e : new AiError("bad_json", `${providerName(cfg.provider)} didn't return valid JSON.`);
+        errors.push(err);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    throw new AiError(errors[errors.length - 1].code, errors.map((e) => e.message).join(" "));
+  }
+
+  function providerName(p: Provider) { return p === "groq" ? "Groq" : "Gemini"; }
+
+  async function completeWith(
+    { provider, key, model }: { provider: Provider; key: string; model: string },
+    prompt: { system: string; user: string },
+    fetchImpl: typeof fetch,
   ): Promise<string> {
-    const { provider, key, model } = activeConfig(settings);
-    if (!key) throw new AiError("no_key", "Add a Gemini or Groq API key in AI settings first.");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
@@ -289,11 +329,13 @@
   async function run(req: Request, fetchImpl: typeof fetch = fetch) {
     const { provider, model } = activeConfig(req.settings);
     if (req.task === "test") {
-      const text = await complete(req.settings, {
+      // Test the provider as chosen, without falling back, so a broken key shows.
+      const cfg = activeConfig(req.settings);
+      if (!cfg.key) throw new AiError("no_key", "Add a Gemini or Groq API key in AI settings first.");
+      parseJson(await completeWith(cfg, {
         system: "You are a connectivity check. Reply with JSON only.",
         user: 'Reply with exactly {"ok":true} as JSON.',
-      }, fetchImpl);
-      parseJson(text);
+      }, fetchImpl));
       return { provider, model };
     }
     if (!String(req.cv || "").trim() && !String(req.fields?.skills || "").trim()) {
@@ -302,13 +344,17 @@
     if (req.task === "answers") {
       const questions = (req.questions || []).slice(0, 25);
       if (!questions.length) return { answers: [], provider, model };
-      const text = await complete(req.settings, answersPrompt(req.cv || "", req.fields || {}, req.job || {}, questions), fetchImpl);
-      return { answers: readAnswers(parseJson(text), questions), provider, model };
+      const out = await complete(req.settings, answersPrompt(req.cv || "", req.fields || {}, req.job || {}, questions), fetchImpl, parseJson);
+      return { answers: readAnswers(parseJson(out.text), questions), ...used(out) };
     }
-    const text = await complete(req.settings, matchPrompt(req.cv || "", req.fields || {}, req.job || {}), fetchImpl);
-    return { match: { ...readMatch(parseJson(text)), provider, model, at: new Date().toISOString() }, provider, model };
+    const out = await complete(req.settings, matchPrompt(req.cv || "", req.fields || {}, req.job || {}), fetchImpl, parseJson);
+    return { match: { ...readMatch(parseJson(out.text)), ...used(out), at: new Date().toISOString() }, ...used(out) };
   }
 
-  const api = { run, complete, answersPrompt, matchPrompt, parseJson, readAnswers, readMatch, matchOption, activeConfig, DEFAULT_MODELS };
+  function used(c: Completion) {
+    return { provider: c.provider, model: c.model, ...(c.fallbackFrom ? { fallbackFrom: c.fallbackFrom } : {}) };
+  }
+
+  const api = { run, complete, answersPrompt, matchPrompt, parseJson, readAnswers, readMatch, matchOption, activeConfig, providerChain, DEFAULT_MODELS };
   (globalThis as unknown as { SmartFillAI: typeof api }).SmartFillAI = api;
 })();

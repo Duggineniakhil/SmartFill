@@ -52,7 +52,7 @@ const PROFILE_DEFAULTS = {
   smartfill_ai: {}, smartfill_ai_matches: {}, smartfill_job_texts: {},
 } as SmartFillStorageData;
 
-const aiReady = () => Boolean((aiSettings.provider === "groq" ? aiSettings.groqKey : aiSettings.geminiKey)?.trim());
+const aiReady = () => Boolean(aiSettings.geminiKey?.trim() || aiSettings.groqKey?.trim());
 
 function readFacts(d: SmartFillStorageData) {
   resumeText = d.smartfill_resume?.text || "";

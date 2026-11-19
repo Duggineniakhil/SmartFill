@@ -19,7 +19,7 @@ const STEPS = [
 const SAFETY = [
   { t: "It never submits", d: "SmartFill fills and drafts. You review every field and click Submit yourself." },
   { t: "Your data stays local", d: "Profile, CV, applications and API key live in your browser's storage. There's no SmartFill server, account or telemetry." },
-  { t: "AI is opt-in", d: "Nothing is sent anywhere until you add your own Gemini or Groq key and click an AI button. Then your CV, the job description and the questions go to that provider — never your email, phone or address." },
+  { t: "AI is opt-in", d: "Nothing is sent anywhere until you add your own Gemini or Groq key and click an AI button. Then your CV, the job description and the questions go to that provider (or the other one, if it fails and you added both keys) — never your email, phone or address." },
   { t: "No made-up facts", d: "The AI may only use what's in your CV. If your CV doesn't answer a question (salary, visa, start date), the field stays empty and you're told why." },
   { t: "Some things are always yours", d: "Equal-opportunity questions (gender, race, veteran, disability…), consent and \"I agree\" boxes are never touched." },
   { t: "Never learns secrets", d: "Passwords, OTPs, card, bank and ID numbers, search boxes and login forms are ignored — never captured, never filled." },
@@ -232,6 +232,7 @@ export default function AutoFlowLanding() {
               menus on Greenhouse. It must pick from the real options; anything else is thrown away.</Bullet>
             <Bullet>Drafts are outlined amber so you read and edit each one before submitting.</Bullet>
             <Bullet>If your CV doesn't cover a question, the field stays empty and the popup tells you why.</Bullet>
+            <Bullet>Add both keys and one backs up the other: if Gemini is down or overloaded, Groq answers instead, and the other way round.</Bullet>
           </ul>
         </Feature>
 

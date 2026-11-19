@@ -76,6 +76,44 @@ describe("AI client", () => {
     expect(out.model).toBe("openai/gpt-oss-120b");
   });
 
+  it("falls back to the other provider when the chosen one fails", async () => {
+    const settings = { provider: "gemini", geminiKey: "g", groqKey: "q" };
+    const fetchImpl = vi.fn(async (url: string) => (url.includes("googleapis")
+      ? json({ error: { message: "This model is currently experiencing high demand." } }, 503)
+      : json({ choices: [{ message: { content: '{"score":70,"summary":"Fair.","strengths":[],"gaps":[],"tips":[]}' } }] })));
+    const out = await ai.run({ task: "match", settings, cv: CV, job: { text: "Python" } }, fetchImpl as unknown as typeof fetch);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(out).toMatchObject({ provider: "groq", model: "openai/gpt-oss-120b", fallbackFrom: "Gemini" });
+    expect(out.match).toMatchObject({ score: 70, provider: "groq", fallbackFrom: "Gemini" });
+
+    // Groq chosen and broken → Gemini answers; unreadable JSON also counts as a failure.
+    const reverse = vi.fn(async (url: string) => (url.includes("groq")
+      ? json({ choices: [{ message: { content: "not json" } }] })
+      : json({ candidates: [{ content: { parts: [{ text: '{"answers":[{"id":"q1","answer":"Hi"}]}' }] } }] })));
+    const drafted = await ai.run({ task: "answers", settings: { ...settings, provider: "groq" }, cv: CV, job: {}, questions: QUESTIONS }, reverse as unknown as typeof fetch);
+    expect(drafted).toMatchObject({ provider: "gemini", fallbackFrom: "Groq" });
+
+    // Only one key → no fallback; both failing → both reasons are given.
+    const busy = vi.fn(async () => json({}, 503));
+    await expect(ai.run({ task: "match", settings: { geminiKey: "g" }, cv: CV, job: {} }, busy as unknown as typeof fetch))
+      .rejects.toMatchObject({ code: "busy", message: expect.stringMatching(/^Gemini is overloaded/) });
+    expect(busy).toHaveBeenCalledTimes(1);
+    await expect(ai.run({ task: "match", settings, cv: CV, job: {} }, (async () => json({}, 503)) as unknown as typeof fetch))
+      .rejects.toMatchObject({ message: expect.stringMatching(/Gemini is overloaded.*Groq is overloaded/) });
+
+    // With only the other provider's key, that one is used.
+    const onlyGroq = vi.fn(async () => json({ choices: [{ message: { content: '{"score":50}' } }] }));
+    expect(await ai.run({ task: "match", settings: { provider: "gemini", groqKey: "q" }, cv: CV, job: {} }, onlyGroq as unknown as typeof fetch))
+      .toMatchObject({ provider: "groq" });
+  });
+
+  it("tests the chosen provider without falling back", async () => {
+    const fetchImpl = vi.fn(async () => json({}, 503));
+    await expect(ai.run({ task: "test", settings: { geminiKey: "g", groqKey: "q" } }, fetchImpl as unknown as typeof fetch))
+      .rejects.toMatchObject({ code: "busy" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("passes on the provider's reason when a model isn't available", async () => {
     const notFound = (async () => json({ error: { message: "models/gemini-9 is not found for API version v1beta" } }, 404)) as unknown as typeof fetch;
     await expect(ai.run({ task: "test", settings: { geminiKey: "x", geminiModel: "gemini-9" } }, notFound))

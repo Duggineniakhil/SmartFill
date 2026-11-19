@@ -489,7 +489,7 @@
     return new Promise((resolve) => {
       chrome.storage.local.get(["smartfill_ai", "smartfill_resume", "enabled"], (d) => {
         const s = d.smartfill_ai || {};
-        const key = s.provider === "groq" ? s.groqKey : s.geminiKey;
+        const key = s.geminiKey?.trim() || s.groqKey?.trim();
         aiReady = d.enabled !== false && Boolean(key && d.smartfill_resume?.text?.trim());
         resolve();
       });

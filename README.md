@@ -89,7 +89,8 @@ you want to work here?" using your CV and the job description.
 - Name, email and phone are filled by the on-device autofill, never by the AI.
 
 Set it up in the tracker under **✦ AI settings**: pick a provider, paste your key, optionally change the model
-(defaults: `gemini-3.8-flash` and `openai/gpt-oss-120b`), and click **Test connection**.
+(defaults: `gemini-3.8-flash` and `openai/gpt-oss-120b`), and click **Test connection**. Add both keys and the
+other provider takes over automatically whenever your chosen one fails or is overloaded.
 
 <p align="center">
   <img src="docs/screenshots/ai-settings.png" alt="The AI settings panel with Google Gemini and Groq key and model fields and a Test connection button" width="900" />
@@ -126,7 +127,8 @@ Everything except the optional AI works offline, on your device. Here's exactly 
 - **Your data stays local.** Profile, CV, applications and API key live in your browser's storage
   (`chrome.storage.local`). There's no SmartFill server, account or telemetry.
 - **AI is opt-in.** Nothing is sent anywhere until you add your own Gemini or Groq key and click an AI button.
-  Then your CV, the job description and the questions go to that provider — never your email, phone or address.
+  Then your CV, the job description and the questions go to that provider (or, if it fails and you added a second
+  key, to the other one) — never your email, phone or address.
   Your key is used only by the extension's background worker and sent only to that provider.
 - **No made-up facts.** The AI may only use what's in your CV. If your CV doesn't answer a question, the field
   stays empty and you're told why.
