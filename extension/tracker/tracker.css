@@ -77,8 +77,8 @@ input:focus, select:focus, textarea:focus { outline: 1px solid #22d3ee; border-c
 .card .tag.withdrawn { background: #1f2937; color: #9ca3af; }
 .card .notes-preview { color: #cbd5e1; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid #374151; padding-left: 6px; }
 .card textarea { width: 100%; min-height: 60px; resize: vertical; font-size: 12px; }
-.card .controls { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
-.card .controls select { flex: 1; min-width: 96px; padding: 3px 4px; font-size: 12px; }
+.card .controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.card .controls select { flex: 1 1 100%; min-width: 0; padding: 3px 4px; font-size: 12px; }
 .card .controls a, .card .controls button {
   background: none; border: 1px solid #1f2937; color: #9ca3af; border-radius: 4px;
   padding: 3px 7px; font-size: 12px; text-decoration: none;
@@ -96,3 +96,23 @@ footer { margin-top: 20px; color: #6b7280; font-size: 11px; text-align: center; 
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .add-form { grid-template-columns: 1fr 1fr; }
 }
+
+.cv-panel {
+  background: #111114; border: 1px solid #1f2937; border-radius: 6px; padding: 12px; margin-bottom: 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.cv-head p { margin: 4px 0 0; color: #9ca3af; font-size: 12px; max-width: 760px; }
+.cv-panel textarea { width: 100%; min-height: 220px; resize: vertical; font-size: 12px; line-height: 1.5; }
+.cv-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.cv-summary { color: #9ca3af; font-size: 12px; }
+.cv-summary.ok { color: #86efac; }
+.cv-actions { display: flex; gap: 8px; }
+.card .top-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+.card .score {
+  flex: none; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: #1f2937; color: #9ca3af; cursor: help;
+}
+.card .score.strong { background: #052e16; color: #86efac; }
+.card .score.partial { background: #3b2a05; color: #fcd34d; }
+.card .score.weak { background: #2a0f0f; color: #fca5a5; }
+.card .missing { color: #9ca3af; font-size: 11px; overflow-wrap: anywhere; }

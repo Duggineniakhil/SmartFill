@@ -27,13 +27,36 @@ const el = (tag, cls, text) => {
     return node;
 };
 let apps = {};
+let cachedReqs = {};
+let facts = null;
+let resumeText = "";
 const openNotes = new Set();
+const matchApi = () => window.__SMARTFILL__?.match;
 // ─── Storage ──────────────────────────────────────────────────────────────────
+const PROFILE_DEFAULTS = {
+    [KEY]: {}, smartfill_job_requirements: {}, smartfill_profile: { fields: {} }, smartfill_resume: { text: "", updated_at: "" },
+};
+function readFacts(d) {
+    resumeText = d.smartfill_resume?.text || "";
+    facts = matchApi()?.userFacts(d.smartfill_profile?.fields || {}, resumeText) || null;
+}
 function load() {
-    chrome.storage.local.get({ [KEY]: {} }, (d) => {
+    chrome.storage.local.get(PROFILE_DEFAULTS, (d) => {
         apps = d.smartfill_applications || {};
+        cachedReqs = d.smartfill_job_requirements || {};
+        readFacts(d);
+        if (!$("cvText").value)
+            $("cvText").value = resumeText;
+        renderCvSummary();
         render();
     });
+}
+function matchFor(a) {
+    const req = a.requirements || cachedReqs[a.id]?.requirements;
+    const api = matchApi();
+    if (!req || !api || !facts)
+        return null;
+    return api.score(req, facts);
 }
 // Read-modify-write, so a record logged by another tab meanwhile is kept.
 function update(mutate) {
@@ -138,13 +161,31 @@ function renderCard(a) {
         card.classList.add("dragging");
     });
     card.addEventListener("dragend", () => card.classList.remove("dragging"));
-    card.append(el("div", "company", a.company), el("div", "role", a.title));
+    const top = el("div", "top-row");
+    top.append(el("div", "company", a.company));
+    const match = matchFor(a);
+    if (match && match.score !== null) {
+        const pill = el("span", `score ${match.level}`, `${match.score}%`);
+        pill.title = [
+            `Match score: ${match.score}%${match.lowConfidence ? " (rough estimate)" : ""}`,
+            match.matched.length ? `You have: ${match.matched.join(", ")}` : "",
+            match.missing.length ? `Missing: ${match.missing.join(", ")}` : "",
+            match.missingPreferred.length ? `Nice to have: ${match.missingPreferred.join(", ")}` : "",
+            match.yearsNote || "", match.degreeNote || "",
+        ].filter(Boolean).join("\n");
+        top.append(pill);
+    }
+    card.append(top, el("div", "role", a.title));
     const meta = [a.location, a.platform].filter(Boolean).join(" · ");
     if (meta)
         card.append(el("div", "meta", meta));
     if (a.status === "rejected" || a.status === "withdrawn")
         card.append(el("span", `tag ${a.status}`, STATUS_LABELS[a.status]));
     card.append(el("div", "when", whenText(a)));
+    if (match && match.score !== null && match.missing.length && a.status === "interested") {
+        const more = match.missing.length > 3 ? ` +${match.missing.length - 3}` : "";
+        card.append(el("div", "missing", `Missing: ${match.missing.slice(0, 3).join(", ")}${more}`));
+    }
     if (needsFollowUp(a)) {
         const days = Math.floor((Date.now() - lastChange(a)) / DAY);
         card.append(el("div", "follow", `No reply in ${days} days — follow up?`));
@@ -211,7 +252,9 @@ function render() {
     const board = $("board");
     board.hidden = list.length === 0;
     board.replaceChildren();
-    const visible = list.filter(matchesFilters).sort((x, y) => lastChange(y) - lastChange(x));
+    const byMatch = $("sortBy").value === "match";
+    const scoreOf = (a) => matchFor(a)?.score ?? -1;
+    const visible = list.filter(matchesFilters).sort((x, y) => (byMatch ? scoreOf(y) - scoreOf(x) : 0) || lastChange(y) - lastChange(x));
     for (const col of COLUMNS) {
         const column = el("section", "column");
         column.dataset.column = col.id;
@@ -290,11 +333,50 @@ $("exportCsv").addEventListener("click", () => {
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 });
+// ─── CV ───────────────────────────────────────────────────────────────────────
+function renderCvSummary() {
+    const out = $("cvSummary");
+    if (!facts || !facts.hasData) {
+        out.className = "cv-summary";
+        out.textContent = "No CV yet: jobs can't be scored until you add one.";
+        return;
+    }
+    const degree = ["", "a diploma", "a bachelor's degree", "a master's degree", "a PhD"][facts.degree || 0];
+    const years = facts.years === null ? "" : facts.yearsSource === "dates" ? `about ${facts.years} years of experience` : `${facts.years} years of experience`;
+    out.className = "cv-summary ok";
+    out.textContent = `Found ${facts.skills.length} skills${years ? `, ${years}` : ""}${degree ? `, ${degree}` : ""}.`;
+    out.title = facts.skills.map((s) => s.label).join(", ");
+}
+function toggleCv(show = $("cvPanel").hidden) {
+    $("cvPanel").hidden = !show;
+    if (show)
+        $("cvText").focus();
+}
+$("cvToggle").addEventListener("click", () => toggleCv());
+$("cvCancel").addEventListener("click", () => toggleCv(false));
+$("cvSave").addEventListener("click", () => {
+    const text = $("cvText").value.slice(0, 50000);
+    chrome.storage.local.set({ smartfill_resume: { text, updated_at: new Date().toISOString() } }, () => {
+        const btn = $("cvSave");
+        btn.textContent = "Saved";
+        setTimeout(() => { btn.textContent = "Save CV"; }, 1200);
+        load();
+    });
+});
+if (location.hash === "#cv")
+    toggleCv(true);
 $("search").addEventListener("input", render);
+$("sortBy").addEventListener("change", render);
 $("platformFilter").addEventListener("change", render);
 $("followOnly").addEventListener("change", render);
 chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !changes[KEY])
+    if (area !== "local")
+        return;
+    if (changes.smartfill_profile || changes.smartfill_resume || changes.smartfill_job_requirements) {
+        load();
+        return;
+    }
+    if (!changes[KEY])
         return;
     apps = changes[KEY].newValue || {};
     // Don't wipe a note the user is typing; it re-renders once they're done.

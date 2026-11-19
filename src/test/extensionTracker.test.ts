@@ -19,6 +19,7 @@ function loadTracker(): Tracker {
       },
     },
   });
+  window.eval(readFileSync(resolve("extension/content/matchScore.js"), "utf8"));
   window.eval(readFileSync(resolve("extension/content/tracker.js"), "utf8"));
   return window.__SMARTFILL__.tracker!;
 }
@@ -141,6 +142,42 @@ describe("tracker: logging on submit", () => {
   });
 });
 
+describe("tracker: job requirements", () => {
+  const description = `<p>We are hiring a backend engineer to build payment APIs used by millions of customers every day.
+    You will own services end to end, from design reviews to on-call, and work closely with product and design.</p>
+    <h3>Requirements</h3><ul><li>3+ years of experience building backend services</li>
+    <li>Python and PostgreSQL</li><li>AWS</li></ul>
+    <h3>Nice to have</h3><ul><li>Kubernetes</li></ul>`;
+  const ld = `<script type="application/ld+json">${JSON.stringify({
+    "@type": "JobPosting", title: "Backend Engineer", description,
+    hiringOrganization: { name: "Acme Robotics" },
+  })}</script>`;
+
+  beforeEach(() => {
+    store = {};
+    set.mockClear();
+    document.head.innerHTML = ld;
+    document.body.innerHTML = "<form><input></form>";
+  });
+  afterEach(() => { document.head.innerHTML = ""; document.body.innerHTML = ""; });
+
+  it("reads requirements from the description and caches them for the apply page", async () => {
+    const t = loadTracker();
+    const info = await t.jobInfo();
+    expect(info!.requirements!.required.map((r) => r.label).sort()).toEqual(["AWS", "PostgreSQL", "Python"]);
+    expect(info!.requirements!.preferred.map((r) => r.label)).toEqual(["Kubernetes"]);
+    expect(info!.requirements!.years).toBe(3);
+    const cache = store.smartfill_job_requirements as Record<string, { requirements: SmartFillRequirements }>;
+    expect(cache[info!.job.key].requirements.years).toBe(3);
+
+    // Submitting attaches them to the application.
+    document.body.innerHTML = `<button type="button" id="s">Submit application</button>`;
+    document.getElementById("s")!.click();
+    const app = Object.values(store.smartfill_applications as Record<string, SmartFillApplication>)[0];
+    expect(app.requirements?.years).toBe(3);
+  });
+});
+
 describe("tracker page", () => {
   const html = readFileSync(resolve("extension/tracker/tracker.html"), "utf8");
   const now = new Date().toISOString();
@@ -151,8 +188,8 @@ describe("tracker page", () => {
     history: [{ status, at: now }], notes: "", ...extra,
   });
 
-  function loadPage(apps: Record<string, SmartFillApplication>) {
-    store = { smartfill_applications: apps };
+  function loadPage(apps: Record<string, SmartFillApplication>, extra: Record<string, unknown> = {}) {
+    store = { smartfill_applications: apps, ...extra };
     document.body.innerHTML = new DOMParser().parseFromString(html, "text/html").body.innerHTML;
     Object.assign(window, {
       chrome: {
@@ -162,6 +199,7 @@ describe("tracker page", () => {
         },
       },
     });
+    window.eval(readFileSync(resolve("extension/content/matchScore.js"), "utf8"));
     window.eval(readFileSync(resolve("extension/tracker/tracker.js"), "utf8"));
   }
 
@@ -190,6 +228,25 @@ describe("tracker page", () => {
     expect(card.querySelector("img")).toBeNull();
     expect(card.querySelector(".company")!.textContent).toContain("<img");
     expect(card.querySelector("a")).toBeNull();
+  });
+
+  it("shows a match score from the saved CV and sorts by it", () => {
+    const req = (skills: string[]): SmartFillRequirements => ({
+      required: skills.map((label) => ({ id: label.toLowerCase(), label })), preferred: [], years: null, degree: null,
+    });
+    loadPage({
+      weak: app("weak", "interested", { requirements: req(["Kotlin", "Swift", "Python"]), updatedAt: now }),
+      strong: app("strong", "interested", { requirements: req(["Python", "Django"]), updatedAt: old, createdAt: old }),
+    }, { smartfill_resume: { text: "Python developer, 3 years of experience with Django", updated_at: now } });
+    const pill = (id: string) => document.querySelector(`[data-id="${id}"] .score`)!.textContent;
+    expect(pill("strong")).toBe("100%");
+    expect(pill("weak")).toBe("33%");
+    expect(document.querySelector('[data-id="weak"] .missing')!.textContent).toBe("Missing: Kotlin, Swift");
+
+    const sort = document.getElementById("sortBy") as HTMLSelectElement;
+    sort.value = "match";
+    sort.dispatchEvent(new Event("change"));
+    expect(Array.from(column("interested").querySelectorAll(".card"), (c) => (c as HTMLElement).dataset.id)).toEqual(["strong", "weak"]);
   });
 
   it("changes status from the card's dropdown and records the history", () => {

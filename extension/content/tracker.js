@@ -7,6 +7,9 @@
     if (window.__SMARTFILL__?.tracker)
         return;
     const APPLICATIONS_KEY = "smartfill_applications";
+    const REQUIREMENTS_KEY = "smartfill_job_requirements";
+    const REQUIREMENTS_MAX = 100;
+    const MIN_DESCRIPTION = 200;
     const STATUS_RANK = {
         interested: 0, applied: 1, interview: 2, offer: 3, rejected: 4, withdrawn: 4,
     };
@@ -114,6 +117,7 @@
                     }).filter(Boolean)[0];
                     const remote = obj.jobLocationType === "TELECOMMUTE" ? "Remote" : "";
                     return {
+                        description: typeof obj.description === "string" ? obj.description : "",
                         title: clean(obj.title),
                         company: clean(typeof org === "string" ? org : org?.name),
                         location: clean(place || remote),
@@ -204,6 +208,86 @@
             platform: platform?.name || "Company site",
         };
     }
+    // HTML (often entity-encoded in JSON-LD) to text with line breaks kept, so
+    // requirement lists stay one item per line.
+    function htmlToText(html) {
+        const decode = (s) => new DOMParser().parseFromString(`<!doctype html><body>${s}`, "text/html").body.textContent || "";
+        let t = html;
+        if (!/<[a-z]/i.test(t) && /&lt;/i.test(t))
+            t = decode(t);
+        t = t.replace(/<\s*(br|\/p|\/li|\/h[1-6]|\/div|\/ul|\/ol|li|p|h[1-6])\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, " ");
+        return decode(t.replace(/</g, "&lt;")).replace(/[ \t]+/g, " ").replace(/\n\s*/g, "\n").trim();
+    }
+    const DESCRIPTION_SELECTORS = [
+        ".posting-page", '[data-qa="job-description"]',
+        '[data-automation-id="jobPostingDescription"]',
+        ".job__description", "#content .body", "#content",
+        ".jobs-description__content", ".jobs-description", "#job-details", ".description__text",
+        ".ashby-job-posting-description", '[class*="descriptionText"]',
+        '[class*="job-description"]', '[class*="jobDescription"]', "#job-description",
+        "main", "article", '[role="main"]',
+    ];
+    function jobDescription(doc) {
+        const ld = readJsonLd(doc);
+        if (ld?.description) {
+            const t = htmlToText(ld.description);
+            if (t.length >= MIN_DESCRIPTION)
+                return t.slice(0, 30000);
+        }
+        for (const sel of DESCRIPTION_SELECTORS) {
+            const el = doc.querySelector(sel);
+            if (!el)
+                continue;
+            // innerText keeps line breaks on a rendered page; textContent elsewhere.
+            const t = String(el.innerText || el.textContent || "").replace(/[ \t]+/g, " ").trim();
+            if (t.length >= MIN_DESCRIPTION)
+                return t.slice(0, 30000);
+        }
+        return "";
+    }
+    function readUserSkills() {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(["smartfill_profile"], (d) => resolve(d.smartfill_profile?.fields?.skills || ""));
+        });
+    }
+    function cachedRequirements(key) {
+        return new Promise((resolve) => {
+            chrome.storage.local.get([REQUIREMENTS_KEY], (d) => resolve(d[REQUIREMENTS_KEY]?.[key]?.requirements || null));
+        });
+    }
+    // Remember what a posting asks for, so its apply page (which usually has no
+    // description) and the tracker board can still score it.
+    function cacheRequirements(key, requirements) {
+        return new Promise((resolve) => {
+            chrome.storage.local.get([REQUIREMENTS_KEY, APPLICATIONS_KEY], (d) => {
+                const all = { ...(d[REQUIREMENTS_KEY] || {}), [key]: { requirements, at: new Date().toISOString() } };
+                const trimmed = Object.fromEntries(Object.entries(all)
+                    .sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, REQUIREMENTS_MAX));
+                const updates = { [REQUIREMENTS_KEY]: trimmed };
+                const app = d[APPLICATIONS_KEY]?.[key];
+                if (app && !app.requirements)
+                    updates[APPLICATIONS_KEY] = { ...d[APPLICATIONS_KEY], [key]: { ...app, requirements } };
+                chrome.storage.local.set(updates, () => resolve());
+            });
+        });
+    }
+    async function requirementsHere(doc) {
+        const match = window.__SMARTFILL__.match;
+        if (!match)
+            return null;
+        const text = jobDescription(doc);
+        if (text.length < MIN_DESCRIPTION)
+            return null;
+        return match.extractRequirements(text, await readUserSkills());
+    }
+    async function requirementsFor(job) {
+        const here = await requirementsHere(document);
+        if (here && (here.required.length || here.preferred.length || here.years !== null)) {
+            await cacheRequirements(job.key, here);
+            return here;
+        }
+        return cachedRequirements(job.key);
+    }
     function isJobPage(doc, href) {
         const url = new URL(href);
         const platform = platformOf(url);
@@ -247,13 +331,16 @@
     }
     function record(job, status) {
         return new Promise((resolve) => {
-            chrome.storage.local.get([APPLICATIONS_KEY, "enabled"], (data) => {
+            chrome.storage.local.get([APPLICATIONS_KEY, REQUIREMENTS_KEY, "enabled"], (data) => {
                 if (data.enabled === false) {
                     resolve(null);
                     return;
                 }
                 const all = { ...(data[APPLICATIONS_KEY] || {}) };
                 const merged = mergeApplication(all[job.key], job, status, new Date().toISOString());
+                const known = data[REQUIREMENTS_KEY]?.[job.key]?.requirements;
+                if (!merged.requirements && known)
+                    merged.requirements = known;
                 all[job.key] = merged;
                 chrome.storage.local.set({ [APPLICATIONS_KEY]: all }, () => resolve(merged));
             });
@@ -296,11 +383,18 @@
             // Never let tracking break the page's own click handling.
         }
     }, true);
-    // Warm the cache once the page has rendered its job details.
-    setTimeout(() => { try {
-        currentJob();
+    // Warm the caches once the page has rendered its job details. Single-page
+    // job boards (LinkedIn) render the description late, so look twice.
+    for (const delay of [1500, 5000]) {
+        setTimeout(() => {
+            try {
+                const job = currentJob();
+                if (job)
+                    requirementsFor(job).catch(() => { });
+            }
+            catch { /* ignore */ }
+        }, delay);
     }
-    catch { /* ignore */ } }, 1500);
     window.__SMARTFILL__ = window.__SMARTFILL__ || {};
     window.__SMARTFILL__.tracker = {
         // Called by the popup in every frame of the active tab.
@@ -308,8 +402,17 @@
             const job = currentJob();
             if (!job)
                 return null;
-            return { job, application: await lookup(job.key) };
+            const requirements = await requirementsFor(job).catch(() => null);
+            return { job, application: await lookup(job.key), requirements };
         },
+        // For a form embedded in a careers page: the description is in the
+        // top frame, which is not itself an application page.
+        async pageRequirements() {
+            if (!JOBISH_TEXT.test(jobDescription(document)))
+                return null;
+            return requirementsHere(document);
+        },
+        jobDescription,
         async track(status) {
             const job = currentJob();
             return job ? record(job, status) : null;

@@ -59,7 +59,8 @@ const FRAME = `<!doctype html><html><body><form>
 const JOB = `<!doctype html><html><head><title>Backend Engineer - Acme Robotics</title>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"JobPosting","title":"Backend Engineer",
 "hiringOrganization":{"@type":"Organization","name":"Acme Robotics"},
-"jobLocation":{"@type":"Place","address":{"addressLocality":"Berlin","addressCountry":"DE"}}}</script></head><body>
+"jobLocation":{"@type":"Place","address":{"addressLocality":"Berlin","addressCountry":"DE"}},
+"description":"&lt;p&gt;Build the payment APIs behind our robots, used by thousands of warehouses. You will own services end to end and work closely with product.&lt;/p&gt;&lt;h3&gt;Requirements&lt;/h3&gt;&lt;ul&gt;&lt;li&gt;3+ years of experience building backend services&lt;/li&gt;&lt;li&gt;Python and PostgreSQL&lt;/li&gt;&lt;li&gt;AWS and Docker&lt;/li&gt;&lt;/ul&gt;&lt;h3&gt;Nice to have&lt;/h3&gt;&lt;ul&gt;&lt;li&gt;Kubernetes&lt;/li&gt;&lt;/ul&gt;"}</script></head><body>
 <h1>Backend Engineer</h1>
 <div><label for="jn">Full Name</label><input id="jn"></div>
 <div><label for="cv">Resume</label><input id="cv" type="file"></div>
@@ -234,6 +235,9 @@ try {
   // 8. Application tracker: detect the job, log it on submit, show it on the board.
   await popup.check("#enabled");
   await popup.waitForTimeout(300);
+  await sw.evaluate(() => chrome.storage.local.set({
+    smartfill_resume: { text: "Backend developer. 4 years of experience with Python, Django, PostgreSQL and AWS.", updated_at: "2026-11-19" },
+  }));
   await page.bringToFront();
   await page.goto(`${ORIGIN}/careers/backend-engineer/apply?utm_source=x`);
   await page.waitForTimeout(800);
@@ -247,6 +251,9 @@ try {
   }, ORIGIN);
   check("tracker: job detected", [jobInfo?.job?.title, jobInfo?.job?.company, jobInfo?.job?.location, jobInfo?.application],
     ["Backend Engineer", "Acme Robotics", "Berlin, DE", null]);
+  check("match: requirements read from the description",
+    [jobInfo?.requirements?.required.map((r) => r.label).sort(), jobInfo?.requirements?.preferred.map((r) => r.label), jobInfo?.requirements?.years],
+    [["AWS", "Docker", "PostgreSQL", "Python"], ["Kubernetes"], 3]);
   await page.click("#jnext");
   await page.waitForTimeout(300);
   check("tracker: Next does not log", Object.keys((await storage()).smartfill_applications || {}).length, 0);
@@ -262,6 +269,8 @@ try {
   await board.waitForSelector('[data-column="applied"] .card');
   check("tracker page: card in Applied", await board.textContent('[data-column="applied"] .card .company'), "Acme Robotics");
   check("tracker page: total", await board.textContent("#statTotal"), "1");
+  // Skills 3 of 4.5 (Kubernetes is nice-to-have, worth half) at 70%, years met at 20%: 74%.
+  check("match: score on the card", await board.textContent('[data-column="applied"] .card .score'), "74%");
   await board.selectOption('[data-column="applied"] .card select', "interview");
   await board.waitForSelector('[data-column="interview"] .card');
   check("tracker page: moved to Interview", Object.values((await storage()).smartfill_applications).map((a) => a.status), ["interview"]);

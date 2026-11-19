@@ -9,6 +9,7 @@
     <header class="top">
       <div class="brand">⚡ SmartFill <span>Applications</span></div>
       <div class="top-actions">
+        <button id="cvToggle" class="secondary">Your CV</button>
         <button id="addToggle" class="secondary">+ Add application</button>
         <button id="exportCsv" class="secondary">Export CSV</button>
       </div>
@@ -23,6 +24,24 @@
       <div class="stat warn"><b id="statFollow">0</b><span>Need a follow-up</span></div>
     </section>
 
+    <section id="cvPanel" class="cv-panel" hidden>
+      <div class="cv-head">
+        <div>
+          <b>Your CV</b>
+          <p>Paste your CV or LinkedIn summary as plain text. SmartFill reads your skills, years of experience and degree
+            from it to score each job. It stays on this device.</p>
+        </div>
+      </div>
+      <textarea id="cvText" placeholder="Paste your CV here…"></textarea>
+      <div class="cv-foot">
+        <span id="cvSummary" class="cv-summary"></span>
+        <div class="cv-actions">
+          <button id="cvCancel" type="button" class="secondary">Close</button>
+          <button id="cvSave" type="button" class="primary">Save CV</button>
+        </div>
+      </div>
+    </section>
+
     <form id="addForm" class="add-form" hidden>
       <input id="addCompany" placeholder="Company" required />
       <input id="addTitle" placeholder="Role" required />
@@ -34,6 +53,10 @@
     <section class="toolbar">
       <input id="search" type="search" placeholder="Search company, role, location or notes" />
       <select id="platformFilter"><option value="">All platforms</option></select>
+      <select id="sortBy">
+        <option value="recent">Most recent</option>
+        <option value="match">Best match</option>
+      </select>
       <label class="check"><input id="followOnly" type="checkbox" /> Needs follow-up only</label>
     </section>
 
@@ -46,6 +69,7 @@
     </p>
 
     <footer>Stored on this device only.</footer>
+    <script src="../content/matchScore.js"></script>
     <script src="tracker.js"></script>
   </body>
 </html>

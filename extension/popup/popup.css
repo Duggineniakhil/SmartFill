@@ -88,3 +88,18 @@ button.secondary {
 }
 button.secondary.small { padding: 4px 8px; font-size: 12px; }
 button.secondary:hover { background: #083344; }
+
+.match { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.match[hidden] { display: none; }
+.match .score-row { display: flex; align-items: center; gap: 8px; }
+.score {
+  font-weight: 700; font-size: 13px; padding: 2px 8px; border-radius: 999px;
+  background: #1f2937; color: #e5e7eb;
+}
+.score.strong { background: #052e16; color: #86efac; }
+.score.partial { background: #3b2a05; color: #fcd34d; }
+.score.weak { background: #2a0f0f; color: #fca5a5; }
+.match .level { color: #9ca3af; }
+.match .line { color: #cbd5e1; overflow-wrap: anywhere; }
+.match .line b { color: #9ca3af; font-weight: 600; }
+.match .muted { color: #6b7280; }

@@ -218,6 +218,72 @@ function renderAppsCount(apps) {
     el.textContent = parts.join(" · ");
 }
 let jobFrameId = null;
+const LEVEL_TEXT = { strong: "Strong match", partial: "Partial match", weak: "Weak match", none: "" };
+function listText(items, max = 5) {
+    return items.length <= max ? items.join(", ") : `${items.slice(0, max).join(", ")} +${items.length - max} more`;
+}
+function openTracker(hash = "") {
+    chrome.tabs.create({ url: chrome.runtime.getURL(`tracker/tracker.html${hash}`) });
+    window.close();
+}
+// Built with textContent only: skill names can come from the job page.
+function renderMatch(requirements, d) {
+    const box = $("match");
+    if (!box)
+        return;
+    box.hidden = false;
+    box.replaceChildren();
+    const line = (cls, label, text) => {
+        const el = document.createElement("div");
+        el.className = cls;
+        if (label) {
+            const b = document.createElement("b");
+            b.textContent = `${label} `;
+            el.append(b);
+        }
+        el.append(text);
+        box.append(el);
+    };
+    const match = window.__SMARTFILL__?.match;
+    if (!match || !requirements) {
+        line("muted", "", "Open the full job description to get a match score.");
+        return;
+    }
+    const result = match.score(requirements, match.userFacts(d.smartfill_profile?.fields || {}, d.smartfill_resume?.text || ""));
+    if (result.needsProfile) {
+        line("muted", "", "Add your CV to see how well you match this job.");
+        const btn = document.createElement("button");
+        btn.className = "secondary small";
+        btn.textContent = "Add your CV";
+        btn.addEventListener("click", () => openTracker("#cv"));
+        box.append(btn);
+        return;
+    }
+    if (result.score === null) {
+        line("muted", "", "Couldn't find clear requirements in this job description.");
+        return;
+    }
+    const row = document.createElement("div");
+    row.className = "score-row";
+    const pill = document.createElement("span");
+    pill.className = `score ${result.level}`;
+    pill.textContent = `${result.score}% match`;
+    const level = document.createElement("span");
+    level.className = "level";
+    level.textContent = LEVEL_TEXT[result.level] + (result.lowConfidence ? " · rough estimate" : "");
+    row.append(pill, level);
+    box.append(row);
+    if (result.matched.length)
+        line("line", "You have:", listText(result.matched));
+    if (result.missing.length)
+        line("line", "Missing:", listText(result.missing));
+    if (result.missingPreferred.length)
+        line("line", "Nice to have:", listText(result.missingPreferred, 4));
+    if (result.yearsNote)
+        line("line", "", result.yearsNote);
+    if (result.degreeNote)
+        line("line", "", result.degreeNote);
+}
 function renderJob(found) {
     const card = $("job");
     if (!card)
@@ -261,7 +327,10 @@ async function loadJob() {
         // tracker script yet.
         const missing = results.filter((r) => r.result === "missing" || r.result === undefined).map((r) => r.frameId ?? 0);
         if (missing.length > 0) {
-            await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: missing }, files: ["content/tracker.js"] });
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id, frameIds: missing },
+                files: ["content/matchScore.js", "content/tracker.js"],
+            });
             results = await ask();
         }
         const hits = results
@@ -274,6 +343,26 @@ async function loadJob() {
             || hits[0];
         jobFrameId = pick ? pick.frameId : null;
         renderJob(pick ? pick.found : null);
+        if (!pick)
+            return;
+        let requirements = pick.found.requirements || pick.found.application?.requirements || null;
+        // A form embedded in a careers page: the description is in the top frame.
+        if (!requirements && pick.frameId !== 0) {
+            const [top] = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, frameIds: [0] },
+                func: () => window.__SMARTFILL__?.tracker?.pageRequirements() ?? null,
+            }).catch(() => []);
+            if (top?.result) {
+                requirements = top.result;
+                const key = pick.found.job.key;
+                chrome.storage.local.get({ smartfill_job_requirements: {} }, (d) => {
+                    chrome.storage.local.set({
+                        smartfill_job_requirements: { ...d.smartfill_job_requirements, [key]: { requirements, at: new Date().toISOString() } },
+                    });
+                });
+            }
+        }
+        chrome.storage.local.get({ smartfill_profile: { fields: {} }, smartfill_resume: { text: "", updated_at: "" } }, (d) => renderMatch(requirements, d));
     }
     catch {
         renderJob(null);
@@ -300,10 +389,7 @@ if (trackBtnEl) {
 }
 const openTrackerEl = $("openTracker");
 if (openTrackerEl) {
-    openTrackerEl.addEventListener("click", () => {
-        chrome.tabs.create({ url: chrome.runtime.getURL("tracker/tracker.html") });
-        window.close();
-    });
+    openTrackerEl.addEventListener("click", () => openTracker());
 }
 function loadApps() {
     chrome.storage.local.get({ smartfill_applications: {} }, (d) => renderAppsCount(d.smartfill_applications || {}));

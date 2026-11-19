@@ -19,6 +19,8 @@ function loadContentScripts(storage: Record<string, unknown>): Listener {
       },
     },
     ResizeObserver: class { observe() {} },
+    // Each call stands for a freshly loaded page.
+    __SMARTFILL__: undefined,
   });
   window.eval(readFileSync(resolve("extension/content/detectFields.js"), "utf8"));
   window.eval(readFileSync(resolve("extension/content/autofill.js"), "utf8"));

@@ -44,7 +44,39 @@ declare global {
     platform: string;
   }
 
+  interface SmartFillSkillRef { id: string; label: string }
+
+  interface SmartFillRequirements {
+    required: SmartFillSkillRef[];
+    preferred: SmartFillSkillRef[];
+    years: number | null;
+    degree: number | null; // 1 diploma, 2 bachelor's, 3 master's, 4 PhD
+  }
+
+  interface SmartFillUserFacts {
+    skills: SmartFillSkillRef[];
+    years: number | null;
+    yearsSource: "profile" | "cv" | "dates" | null;
+    degree: number | null;
+    hasData: boolean;
+  }
+
+  interface SmartFillMatch {
+    score: number | null;
+    level: "strong" | "partial" | "weak" | "none";
+    matched: string[];
+    missing: string[];
+    missingPreferred: string[];
+    yearsNote: string | null;
+    degreeNote: string | null;
+    lowConfidence: boolean;
+    needsProfile: boolean;
+  }
+
+  interface SmartFillResume { text: string; updated_at: string }
+
   interface SmartFillApplication {
+    requirements?: SmartFillRequirements;
     id: string;
     url: string;
     title: string;
@@ -61,6 +93,8 @@ declare global {
 
   interface SmartFillStorageData {
     smartfill_applications?: Record<string, SmartFillApplication>;
+    smartfill_resume?: SmartFillResume;
+    smartfill_job_requirements?: Record<string, { requirements: SmartFillRequirements; at: string }>;
     profile?: Record<string, string>;
     smartfill_profile?: SmartFillProfile;
     smartfill_settings?: SmartFillSettings;
@@ -118,8 +152,20 @@ declare global {
       labelSimilarity: (a: string, b: string) => number;
       ALIASES: Record<string, string[]>;
       fillNow?: () => Promise<{ filled: number; disabled?: boolean }>;
+      match?: {
+        extractRequirements: (text: string, userSkills?: string) => SmartFillRequirements;
+        userFacts: (fields?: Record<string, string>, resume?: string) => SmartFillUserFacts;
+        score: (req: SmartFillRequirements, facts: SmartFillUserFacts) => SmartFillMatch;
+        yearsFromRanges: (text: string, now?: Date) => number | null;
+      };
       tracker?: {
-        jobInfo: () => Promise<{ job: SmartFillJobInfo; application: SmartFillApplication | null } | null>;
+        jobInfo: () => Promise<{
+          job: SmartFillJobInfo;
+          application: SmartFillApplication | null;
+          requirements: SmartFillRequirements | null;
+        } | null>;
+        pageRequirements: () => Promise<SmartFillRequirements | null>;
+        jobDescription: (doc: Document) => string;
         track: (status: SmartFillApplicationStatus) => Promise<SmartFillApplication | null>;
         jobKey: (href: string) => string;
         jobLink: (href: string) => string;

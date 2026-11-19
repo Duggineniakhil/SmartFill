@@ -307,5 +307,6 @@ function labelSimilarity(a, b) {
             shared += 1;
     return shared / (ta.size + tb.size - shared);
 }
-window.__SMARTFILL__ = { classify, isForbidden, fieldHints, customFieldKey, labelSimilarity, ALIASES };
+// Merge rather than replace: autofill, matchScore and tracker add to this object.
+window.__SMARTFILL__ = Object.assign(window.__SMARTFILL__ || {}, { classify, isForbidden, fieldHints, customFieldKey, labelSimilarity, ALIASES });
 //# sourceMappingURL=detectFields.js.map
