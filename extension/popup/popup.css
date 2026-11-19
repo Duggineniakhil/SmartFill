@@ -56,3 +56,6 @@ footer {
   margin-top: 14px; padding-top: 10px; border-top: 1px solid #1f2937;
   color: #6b7280; font-size: 11px; text-align: center;
 }
+.legend { display: flex; gap: 12px; font-size: 11px; opacity: .8; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }

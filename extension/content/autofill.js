@@ -170,6 +170,88 @@
             // Never let learning break the page's own click handling.
         }
     }, true);
+    const STATUS_COLORS = {
+        filled: "#22c55e",
+        review: "#f59e0b",
+        missing: "#ef4444",
+    };
+    const STATUS_TITLES = {
+        filled: "SmartFill filled this — check it before submitting",
+        review: "SmartFill isn't sure — review this field",
+        missing: "SmartFill has nothing saved for this field",
+    };
+    function markField(el, status) {
+        if (el.dataset.smartfillStatus === status)
+            return;
+        if (el.dataset.smartfillStatus === undefined) {
+            el.dataset.smartfillOutline = el.style.getPropertyValue("outline");
+            el.dataset.smartfillOutlineOffset = el.style.getPropertyValue("outline-offset");
+            // Clear the mark when the user edits the field; ignore SmartFill's own
+            // synthetic input events, which are not trusted.
+            el.addEventListener("input", onUserEdit, true);
+        }
+        el.dataset.smartfillStatus = status;
+        el.style.setProperty("outline", `2px solid ${STATUS_COLORS[status]}`, "important");
+        el.style.setProperty("outline-offset", "1px", "important");
+        // Explain the colour on hover, without overwriting the page's own tooltip.
+        if (!el.title || el.dataset.smartfillTitle === "1") {
+            el.title = STATUS_TITLES[status];
+            el.dataset.smartfillTitle = "1";
+        }
+    }
+    function unmarkField(el) {
+        if (el.dataset.smartfillStatus === undefined)
+            return;
+        el.removeEventListener("input", onUserEdit, true);
+        el.style.removeProperty("outline");
+        el.style.removeProperty("outline-offset");
+        if (el.dataset.smartfillOutline)
+            el.style.setProperty("outline", el.dataset.smartfillOutline);
+        if (el.dataset.smartfillOutlineOffset)
+            el.style.setProperty("outline-offset", el.dataset.smartfillOutlineOffset);
+        delete el.dataset.smartfillStatus;
+        delete el.dataset.smartfillOutline;
+        delete el.dataset.smartfillOutlineOffset;
+        if (el.dataset.smartfillTitle === "1") {
+            el.removeAttribute("title");
+            delete el.dataset.smartfillTitle;
+        }
+    }
+    function onUserEdit(e) {
+        if (!e.isTrusted)
+            return;
+        const el = e.currentTarget;
+        // A "missing" field only clears once something is actually typed in.
+        if (el.dataset.smartfillStatus === "missing" && !fieldValue(el))
+            return;
+        unmarkField(el);
+    }
+    function isRequired(el) {
+        return el.required === true || el.getAttribute("aria-required") === "true";
+    }
+    function hasHelpedHere() {
+        return document.querySelector('[data-smartfill-status="filled"], [data-smartfill-status="review"]') !== null;
+    }
+    // Marks empty fields SmartFill recognises (or the page requires) but has no
+    // value for, but only once it has filled or suggested something on the page,
+    // so unrelated sites are never painted red.
+    function markMissing(candidates) {
+        if (!hasHelpedHere())
+            return;
+        for (const el of candidates) {
+            if (!el.isConnected || fieldValue(el) || el.dataset.smartfillStatus)
+                continue;
+            markField(el, "missing");
+        }
+    }
+    function isMissingCandidate(el) {
+        const { canonicalField, confidence } = classify(el);
+        if (canonicalField && confidence >= AUTOFILL_THRESHOLD)
+            return true;
+        // Required fields count too, unless classify() rejected them as
+        // forbidden (passwords, card numbers) or search boxes.
+        return isRequired(el) && customFieldKey(el) !== null;
+    }
     const BADGE_CLASS = "smartfill-badge";
     function makeBadge(el, value) {
         if (el.dataset.smartfill === "1")
@@ -192,12 +274,15 @@
         btn.addEventListener("click", (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
-            setNativeValue(el, value);
+            const applied = setNativeValue(el, value);
             cleanup();
             el.dataset.smartfillFilled = "1";
+            if (applied)
+                markField(el, "filled");
         });
         wrap.appendChild(btn);
         document.body.appendChild(wrap);
+        markField(el, "review");
         const ro = new ResizeObserver(position);
         function cleanup() {
             wrap.remove();
@@ -329,18 +414,26 @@
             if (data.enabled === false)
                 return;
             const fields = allFields();
+            const missing = [];
             for (const el of fields) {
-                if (fieldValue(el))
+                if (fieldValue(el)) {
+                    // Typed or pasted in without a trusted input event (some editors).
+                    if (el.dataset.smartfillStatus === "missing")
+                        unmarkField(el);
                     continue;
+                }
                 if (el.dataset.smartfill === "1")
                     continue;
                 const fill = resolveFill(el, profile);
-                if (!fill)
+                if (!fill) {
+                    if (isMissingCandidate(el))
+                        missing.push(el);
                     continue;
+                }
                 const { value } = fill;
                 if (fill.strong) {
                     if (settings.autoFillEnabled) {
-                        setNativeValue(el, value);
+                        markField(el, setNativeValue(el, value) ? "filled" : "review");
                         el.dataset.smartfill = "1";
                     }
                 }
@@ -348,6 +441,7 @@
                     makeBadge(el, value);
                 }
             }
+            markMissing(missing);
         });
     }
     let scanTimer;
@@ -371,22 +465,33 @@
                 }
                 const profile = data.smartfill_profile || {};
                 let filled = 0;
+                const missing = [];
                 for (const el of allFields()) {
                     if (fieldValue(el))
                         continue;
                     const fill = resolveFill(el, profile);
-                    if (!fill || !fill.strong)
+                    if (!fill) {
+                        if (isMissingCandidate(el))
+                            missing.push(el);
+                        continue;
+                    }
+                    if (!fill.strong)
                         continue;
                     try {
                         if (setNativeValue(el, fill.value)) {
                             el.dataset.smartfill = "1";
+                            markField(el, "filled");
                             filled++;
+                        }
+                        else {
+                            markField(el, "review");
                         }
                     }
                     catch {
                         // Continue filling other matched fields if one element rejects updates.
                     }
                 }
+                markMissing(missing);
                 resolve({ filled });
             });
         });
