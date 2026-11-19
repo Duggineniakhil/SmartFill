@@ -176,18 +176,20 @@ try {
   await board.screenshot({ path: join(OUT, "tracker-board.png"), clip: { x: 0, y: 0, width: 1360, height: Math.ceil(boardBottom) } });
   console.log("wrote tracker-board.png");
 
-  // 3. AI settings and CV panels.
+  // 3. AI settings and CV panels, cropped to the page (no scrollbar).
+  await board.addStyleTag({ content: "html { scrollbar-width: none; } ::-webkit-scrollbar { display: none; }" });
+  const pageWidth = await board.evaluate(() => document.documentElement.clientWidth);
   await board.click("#aiToggle");
   await board.waitForTimeout(200);
   const aiPanel = await board.locator("#aiPanel").boundingBox();
-  await board.screenshot({ path: join(OUT, "ai-settings.png"), clip: { x: 0, y: aiPanel.y - 16, width: 1360, height: aiPanel.height + 32 } });
+  await board.screenshot({ path: join(OUT, "ai-settings.png"), clip: { x: 0, y: aiPanel.y - 16, width: pageWidth, height: aiPanel.height + 32 } });
   console.log("wrote ai-settings.png");
   await board.click("#aiClose");
 
   await board.click("#cvToggle");
   await board.waitForTimeout(200);
   const panel = await board.locator("#cvPanel").boundingBox();
-  await board.screenshot({ path: join(OUT, "cv-panel.png"), clip: { x: 0, y: panel.y - 16, width: 1360, height: panel.height + 32 } });
+  await board.screenshot({ path: join(OUT, "cv-panel.png"), clip: { x: 0, y: panel.y - 16, width: pageWidth, height: panel.height + 32 } });
   console.log("wrote cv-panel.png");
 
   // 4. Popup on the Acme job page. A popup opened as a tab can't see another
