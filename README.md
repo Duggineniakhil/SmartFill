@@ -89,7 +89,7 @@ you want to work here?" using your CV and the job description.
 - Name, email and phone are filled by the on-device autofill, never by the AI.
 
 Set it up in the tracker under **✦ AI settings**: pick a provider, paste your key, optionally change the model
-(defaults: `gemini-2.5-flash` and `llama-3.3-70b-versatile`), and click **Test connection**.
+(defaults: `gemini-3.8-flash` and `openai/gpt-oss-120b`), and click **Test connection**.
 
 <p align="center">
   <img src="docs/screenshots/ai-settings.png" alt="The AI settings panel with Google Gemini and Groq key and model fields and a Test connection button" width="900" />

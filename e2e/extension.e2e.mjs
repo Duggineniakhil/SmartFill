@@ -425,7 +425,7 @@ try {
   await board.click("#aiToggle");
   await board.click("#aiTest");
   await board.waitForFunction(() => /Connected|rejected|error/i.test(document.getElementById("aiStatus").textContent), null, { timeout: 5000 });
-  check("ai: test connection", await board.textContent("#aiStatus"), "Connected to Gemini (gemini-2.5-flash). Remember to Save.");
+  check("ai: test connection", await board.textContent("#aiStatus"), "Connected to Gemini (gemini-3.8-flash). Remember to Save.");
 
   await board.click("#cvToggle");
   await board.setInputFiles("#cvFile", { name: "cv.pdf", mimeType: "application/pdf",

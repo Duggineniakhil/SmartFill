@@ -169,7 +169,7 @@ try {
       app("umbrella", "Tailspin Toys", "Full-stack Engineer", "Bangalore", "Lever", "rejected", 21),
     ];
     const aiMatch = (score, verdict, summary, strengths, gaps) => ({
-      score, verdict, summary, strengths, gaps, tips: [], provider: "gemini", model: "gemini-2.5-flash", at: at(0),
+      score, verdict, summary, strengths, gaps, tips: [], provider: "gemini", model: "gemini-3.8-flash", at: at(0),
     });
     return new Promise((done) => chrome.storage.local.set({
       smartfill_applications: Object.fromEntries(apps.map((a) => [a.id, a])),
@@ -220,7 +220,7 @@ try {
       for (const id of ["aiDraft", "aiMatch"]) document.getElementById(id).hidden = false;
       document.getElementById("aiDraft").textContent = "✦ Draft 2 answers";
       renderAiMatch({
-        score: 84, verdict: "strong", provider: "gemini", model: "gemini-2.5-flash", at: new Date().toISOString(),
+        score: 84, verdict: "strong", provider: "gemini", model: "gemini-3.8-flash", at: new Date().toISOString(),
         summary: "Strong backend fit: you've run Python and PostgreSQL services on AWS for over 5 years.",
         strengths: ["Python/Django on AWS", "PostgreSQL in production"],
         gaps: ["No Kubernetes or Kafka"],

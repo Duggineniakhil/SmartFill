@@ -35,7 +35,7 @@ describe("AI client", () => {
     }, fetchImpl as unknown as typeof fetch);
 
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent");
+    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent");
     expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("g-key");
     expect(url).not.toContain("g-key");
     const body = JSON.parse(init.body as string);
@@ -63,6 +63,26 @@ describe("AI client", () => {
     expect(body.model).toBe("llama-3.1-8b-instant");
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(out.match).toMatchObject({ score: 100, verdict: "strong", summary: "Good fit.", strengths: ["Python"], provider: "groq" });
+  });
+
+  it("moves settings saved with a retired default to the current model", async () => {
+    const reply = async () => json({ choices: [{ message: { content: '{"ok":true}' } }], candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }] });
+    const gemini = vi.fn(reply);
+    await ai.run({ task: "test", settings: { geminiKey: "g", geminiModel: "gemini-2.5-flash" } }, gemini as unknown as typeof fetch);
+    expect((gemini.mock.calls[0] as unknown as [string])[0]).toContain("/models/gemini-3.8-flash:");
+    const groq = vi.fn(reply);
+    const out = await ai.run({ task: "test", settings: { provider: "groq", groqKey: "g", groqModel: "llama-3.3-70b-versatile" } }, groq as unknown as typeof fetch);
+    expect(JSON.parse((groq.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).model).toBe("openai/gpt-oss-120b");
+    expect(out.model).toBe("openai/gpt-oss-120b");
+  });
+
+  it("passes on the provider's reason when a model isn't available", async () => {
+    const notFound = (async () => json({ error: { message: "models/gemini-9 is not found for API version v1beta" } }, 404)) as unknown as typeof fetch;
+    await expect(ai.run({ task: "test", settings: { geminiKey: "x", geminiModel: "gemini-9" } }, notFound))
+      .rejects.toMatchObject({ code: "bad_model", message: expect.stringMatching(/gemini-9 is not found.*clear it to use the default/) });
+    const decommissioned = (async () => json({ error: { message: "The model `old-llama` has been decommissioned" } }, 400)) as unknown as typeof fetch;
+    await expect(ai.run({ task: "test", settings: { provider: "groq", groqKey: "x", groqModel: "old-llama" } }, decommissioned))
+      .rejects.toMatchObject({ code: "bad_model" });
   });
 
   it("explains bad keys, rate limits and missing setup in plain words", async () => {

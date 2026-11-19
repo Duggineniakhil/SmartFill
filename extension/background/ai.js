@@ -4,9 +4,12 @@
 "use strict";
 (function () {
     const DEFAULT_MODELS = {
-        gemini: "gemini-2.5-flash",
-        groq: "llama-3.3-70b-versatile",
+        gemini: "gemini-3.8-flash",
+        groq: "openai/gpt-oss-120b",
     };
+    // Earlier defaults the providers have since retired. Settings saved with
+    // these quietly move to the current default instead of failing.
+    const RETIRED_MODELS = new Set(["gemini-2.5-flash", "gemini-2.0-flash", "llama-3.3-70b-versatile"]);
     const TIMEOUT_MS = 45000;
     const CV_LIMIT = 15000;
     const JOB_LIMIT = 10000;
@@ -23,7 +26,8 @@
     function activeConfig(s) {
         const provider = s?.provider === "groq" ? "groq" : "gemini";
         const key = (provider === "groq" ? s?.groqKey : s?.geminiKey)?.trim() || "";
-        const model = (provider === "groq" ? s?.groqModel : s?.geminiModel)?.trim() || DEFAULT_MODELS[provider];
+        const saved = (provider === "groq" ? s?.groqModel : s?.geminiModel)?.trim() || "";
+        const model = saved && !RETIRED_MODELS.has(saved) ? saved : DEFAULT_MODELS[provider];
         return { provider, key, model };
     }
     function clip(s, max) {
@@ -185,8 +189,9 @@
         }
         if (res.status === 429)
             return new AiError("rate_limit", `${name} rate limit or quota reached. Wait a minute and try again.`);
-        if (res.status === 404)
-            return new AiError("bad_model", `${name} doesn't know that model. Check the model name in AI settings.`);
+        if (res.status === 404 || /model.*(not found|does not exist|decommissioned|not supported)/i.test(detail)) {
+            return new AiError("bad_model", `${name} doesn't offer that model any more${detail ? ` (${detail})` : ""}. Change the model in AI settings, or clear it to use the default.`);
+        }
         return new AiError("http", `${name} error ${res.status}${detail ? `: ${detail}` : ""}`);
     }
     async function complete(settings, prompt, fetchImpl = fetch) {
