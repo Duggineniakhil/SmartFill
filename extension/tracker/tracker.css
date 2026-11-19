@@ -116,3 +116,20 @@ footer { margin-top: 20px; color: #6b7280; font-size: 11px; text-align: center; 
 .card .score.partial { background: #3b2a05; color: #fcd34d; }
 .card .score.weak { background: #2a0f0f; color: #fca5a5; }
 .card .missing { color: #9ca3af; font-size: 11px; overflow-wrap: anywhere; }
+
+.ai-grid { display: grid; grid-template-columns: 150px 1.4fr 1fr auto; gap: 8px; align-items: center; }
+.ai-grid a { color: #22d3ee; font-size: 12px; }
+.ai-provider { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.cv-summary.err { color: #fca5a5; }
+.cv-upload { display: flex; align-items: center; gap: 10px; }
+.file-btn {
+  position: relative; display: inline-block; color: #22d3ee; border: 1px solid #155e75;
+  padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer;
+}
+.file-btn:hover { background: #083344; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.card .scores { display: flex; gap: 4px; flex: none; }
+.card .score.ai { background: #2e1065; color: #c4b5fd; }
+.card .ai-summary { color: #c4b5fd; font-size: 11px; }
+.card .controls button.ai { color: #c4b5fd; border-color: #4c1d95; }
+.card .controls button.ai:disabled { opacity: .6; cursor: progress; }

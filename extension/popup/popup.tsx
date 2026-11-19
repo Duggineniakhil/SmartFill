@@ -337,7 +337,7 @@ async function loadJob() {
     if (missing.length > 0) {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id!, frameIds: missing },
-        files: ["content/matchScore.js", "content/tracker.js"],
+        files: ["content/detectFields.js", "content/autofill.js", "content/matchScore.js", "content/tracker.js", "content/aiDraft.js"],
       });
       results = await ask();
     }
@@ -351,6 +351,7 @@ async function loadJob() {
       || hits[0];
     jobFrameId = pick ? pick.frameId : null;
     renderJob(pick ? pick.found : null);
+    loadAi(tab.id!, pick ? pick.found : null).catch(() => {});
     if (!pick) return;
 
     let requirements = pick.found.requirements || pick.found.application?.requirements || null;
@@ -376,6 +377,151 @@ async function loadJob() {
     renderJob(null);
   }
 }
+
+// ─── AI: draft answers and match analysis ─────────────────────────────────────
+
+let aiJob: SmartFillJobInfo | null = null;
+let aiTabId = 0;
+
+function aiConfigured(s?: SmartFillAiSettings) {
+  return Boolean((s?.provider === "groq" ? s?.groqKey : s?.geminiKey)?.trim());
+}
+
+function aiOut(build: (box: HTMLElement) => void) {
+  const box = $("aiOut")!;
+  box.hidden = false;
+  box.replaceChildren();
+  build(box);
+}
+
+const div = (cls: string, text: string) => {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.textContent = text;
+  return el;
+};
+
+function labelled(label: string, text: string) {
+  const el = document.createElement("div");
+  const b = document.createElement("b");
+  b.textContent = `${label} `;
+  el.append(b, text);
+  return el;
+}
+
+function renderAiMatch(m: SmartFillAiMatch) {
+  aiOut((box) => {
+    const head = document.createElement("div");
+    head.className = "head";
+    const pill = document.createElement("span");
+    pill.className = `score ${m.verdict}`;
+    pill.textContent = `✦ ${m.score}% AI match`;
+    head.append(pill, div("muted", `${m.provider === "groq" ? "Groq" : "Gemini"} · ${shortDate(m.at)}`));
+    box.append(head);
+    if (m.summary) box.append(div("", m.summary));
+    if (m.strengths.length) box.append(labelled("Strengths:", m.strengths.join("; ")));
+    if (m.gaps.length) box.append(labelled("Gaps:", m.gaps.join("; ")));
+    if (m.tips.length) box.append(labelled("Tips:", m.tips.join("; ")));
+  });
+}
+
+// The job description: from whichever frame has it, else the cached copy.
+async function jobTextFor(tabId: number, key: string): Promise<string> {
+  const results = await chrome.scripting.executeScript<string>({
+    target: { tabId, allFrames: true },
+    func: (k: string) => window.__SMARTFILL__?.tracker?.jobText(k) ?? "",
+    args: [key],
+  }).catch(() => []);
+  return results.map((r) => r.result || "").sort((a, b) => b.length - a.length)[0] || "";
+}
+
+async function loadAi(tabId: number, found: JobResult | null) {
+  aiTabId = tabId;
+  aiJob = found?.job || null;
+  const d = await new Promise<SmartFillStorageData>((r) => chrome.storage.local.get({ smartfill_ai: {}, smartfill_ai_matches: {} }, r));
+  const counts = await chrome.scripting.executeScript<number>({
+    target: { tabId, allFrames: true },
+    func: () => window.__SMARTFILL__?.ai?.questions().length ?? 0,
+  }).catch(() => []);
+  let questions = 0;
+  for (const r of counts as Array<{ result?: number }>) questions += r.result || 0;
+  if (!aiJob && questions === 0) return;
+
+  $("aiSection")!.hidden = false;
+  if (!aiConfigured(d.smartfill_ai)) {
+    $("aiSetup")!.hidden = false;
+    return;
+  }
+  const draftBtn = $("aiDraft")!;
+  if (questions > 0) {
+    draftBtn.hidden = false;
+    draftBtn.textContent = `✦ Draft ${questions} answer${questions === 1 ? "" : "s"}`;
+  }
+  if (aiJob) {
+    $("aiMatch")!.hidden = false;
+    const saved = d.smartfill_ai_matches?.[aiJob.key];
+    if (saved) renderAiMatch(saved);
+  }
+}
+
+$("aiSetup")?.addEventListener("click", () => openTracker("#ai"));
+
+$("aiDraft")?.addEventListener("click", async () => {
+  const btn = $("aiDraft") as HTMLButtonElement;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Drafting…";
+  try {
+    const text = aiJob ? await jobTextFor(aiTabId, aiJob.key) : "";
+    const results = await chrome.scripting.executeScript<SmartFillDraftResult | null>({
+      target: { tabId: aiTabId, allFrames: true },
+      func: (t: string) => window.__SMARTFILL__?.ai?.draftAll(t || undefined) ?? null,
+      args: [text],
+    });
+    const all = results.map((r) => r.result).filter(Boolean) as SmartFillDraftResult[];
+    const drafted = all.reduce((s, r) => s + r.drafted, 0);
+    const error = all.find((r) => r.error)?.error;
+    const skipped = all.flatMap((r) => r.skipped);
+    aiOut((box) => {
+      if (error && !drafted) { box.append(div("err", error)); return; }
+      box.append(div("", drafted
+        ? `Drafted ${drafted} answer${drafted === 1 ? "" : "s"} from your CV. They're outlined amber: read and edit each one before you submit.`
+        : "Nothing was drafted."));
+      for (const s of skipped.slice(0, 4)) box.append(labelled("Skipped:", `${s.label} — ${s.note}`));
+      if (error) box.append(div("err", error));
+    });
+  } catch {
+    aiOut((box) => box.append(div("err", "Couldn't reach this page. Reload it and try again.")));
+  }
+  btn.disabled = false;
+  btn.textContent = label;
+});
+
+$("aiMatch")?.addEventListener("click", async () => {
+  if (!aiJob) return;
+  const btn = $("aiMatch") as HTMLButtonElement;
+  btn.disabled = true;
+  btn.textContent = "Analysing…";
+  const job = aiJob;
+  const text = await jobTextFor(aiTabId, job.key);
+  const res = await new Promise<Record<string, unknown>>((resolve) => {
+    chrome.runtime.sendMessage({
+      type: "SMARTFILL_AI", task: "match",
+      job: { title: job.title, company: job.company, location: job.location, text },
+    }, (r) => resolve((r as Record<string, unknown>) || { ok: false, error: "No reply from SmartFill." }));
+  });
+  btn.disabled = false;
+  btn.textContent = "✦ AI match";
+  if (!res.ok) {
+    aiOut((box) => box.append(div("err", String(res.error))));
+    return;
+  }
+  const match = res.match as SmartFillAiMatch;
+  renderAiMatch(match);
+  chrome.storage.local.get({ smartfill_ai_matches: {} }, (d) => {
+    chrome.storage.local.set({ smartfill_ai_matches: { ...d.smartfill_ai_matches, [job.key]: match } });
+  });
+});
 
 const trackBtnEl = $("trackBtn");
 if (trackBtnEl) {

@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/detectFields.js", "content/autofill.js", "content/matchScore.js", "content/tracker.js"],
+      "js": ["content/detectFields.js", "content/autofill.js", "content/matchScore.js", "content/tracker.js", "content/aiDraft.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

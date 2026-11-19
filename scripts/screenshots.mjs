@@ -96,6 +96,7 @@ const FORM = `<!doctype html><html><head><title>Backend Engineer — Acme Roboti
     <div><label for="li">LinkedIn profile</label><input id="li"></div>
     <div><label for="notice">Notice period *</label><input id="notice" required></div>
     <div><label for="why">Why do you want to work at Acme Robotics?</label><textarea id="why"></textarea></div>
+    <div><label for="proud">Tell us about a project you're proud of.</label><textarea id="proud"></textarea></div>
     <button type="button">Submit application</button>
   </form>
 </div></body></html>`;
@@ -116,16 +117,20 @@ try {
   const extId = new URL(sw.url()).host;
   // Let the install handler write its defaults first, or it overwrites the seed.
   await sw.evaluate(() => new Promise((r) => setTimeout(r, 500)));
-  await sw.evaluate((profile) => chrome.storage.local.set({
+  await sw.evaluate(({ profile, resume }) => chrome.storage.local.set({
     smartfill_profile: profile,
     smartfill_settings: { autoFillEnabled: true, autoSaveEnabled: true },
-  }), PROFILE);
+    smartfill_resume: { text: resume, updated_at: new Date().toISOString() },
+    // A placeholder key: screenshots never call the AI.
+    smartfill_ai: { provider: "gemini", geminiKey: "demo-key-not-real" },
+  }), { profile: PROFILE, resume: RESUME });
 
   // 1. Field colours on an application form.
   const form = await context.newPage();
-  await form.setViewportSize({ width: 640, height: 720 });
+  await form.setViewportSize({ width: 640, height: 860 });
   await form.goto(`${ORIGIN}/careers/backend-engineer/apply`);
   await form.waitForSelector('[data-smartfill-status="missing"]');
+  await form.waitForSelector(".smartfill-ai-draft");
   await form.waitForTimeout(400);
   await form.screenshot({ path: join(OUT, "form-colours.png") });
   console.log("wrote form-colours.png");
@@ -153,9 +158,16 @@ try {
       app("contoso", "Contoso", "Data Analyst", "Remote", "Workday", "offer", 12),
       app("umbrella", "Tailspin Toys", "Full-stack Engineer", "Bangalore", "Lever", "rejected", 21),
     ];
+    const aiMatch = (score, verdict, summary, strengths, gaps) => ({
+      score, verdict, summary, strengths, gaps, tips: [], provider: "gemini", model: "gemini-2.5-flash", at: at(0),
+    });
     return new Promise((done) => chrome.storage.local.set({
       smartfill_applications: Object.fromEntries(apps.map((a) => [a.id, a])),
       smartfill_resume: { text: resume, updated_at: new Date().toISOString() },
+      smartfill_ai_matches: {
+        acme: aiMatch(84, "strong", "Strong backend fit: Python, PostgreSQL and AWS in production.", ["Python and Django services on AWS"], ["No Kubernetes"]),
+        globex: aiMatch(58, "partial", "Solid React and TypeScript, but no Next.js or GraphQL yet.", ["React + TypeScript dashboard"], ["Next.js", "GraphQL"]),
+      },
     }, done));
   }, { jd: JD, resume: RESUME });
   await board.reload();
@@ -164,7 +176,14 @@ try {
   await board.screenshot({ path: join(OUT, "tracker-board.png"), clip: { x: 0, y: 0, width: 1360, height: Math.ceil(boardBottom) } });
   console.log("wrote tracker-board.png");
 
-  // 3. CV panel.
+  // 3. AI settings and CV panels.
+  await board.click("#aiToggle");
+  await board.waitForTimeout(200);
+  const aiPanel = await board.locator("#aiPanel").boundingBox();
+  await board.screenshot({ path: join(OUT, "ai-settings.png"), clip: { x: 0, y: aiPanel.y - 16, width: 1360, height: aiPanel.height + 32 } });
+  console.log("wrote ai-settings.png");
+  await board.click("#aiClose");
+
   await board.click("#cvToggle");
   await board.waitForTimeout(200);
   const panel = await board.locator("#cvPanel").boundingBox();
@@ -174,7 +193,7 @@ try {
   // 4. Popup on the Acme job page. A popup opened as a tab can't see another
   // tab, so render the job card with the same functions the popup uses.
   const popup = await context.newPage();
-  await popup.setViewportSize({ width: 340, height: 1100 });
+  await popup.setViewportSize({ width: 340, height: 1300 });
   await popup.goto(`chrome-extension://${extId}/popup/popup.html`);
   await popup.waitForTimeout(400);
   await popup.evaluate((jd) => new Promise((done) => {
@@ -185,6 +204,16 @@ try {
         application: null, requirements,
       });
       renderMatch(requirements, d);
+      document.getElementById("aiSection").hidden = false;
+      for (const id of ["aiDraft", "aiMatch"]) document.getElementById(id).hidden = false;
+      document.getElementById("aiDraft").textContent = "✦ Draft 2 answers";
+      renderAiMatch({
+        score: 84, verdict: "strong", provider: "gemini", model: "gemini-2.5-flash", at: new Date().toISOString(),
+        summary: "Strong backend fit: you've run Python and PostgreSQL services on AWS for over 5 years.",
+        strengths: ["Python/Django on AWS", "PostgreSQL in production"],
+        gaps: ["No Kubernetes or Kafka"],
+        tips: ["Lead with the CI/CD and Docker work"],
+      });
       done();
     });
   }), JD.acme);

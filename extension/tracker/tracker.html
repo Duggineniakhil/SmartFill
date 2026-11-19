@@ -9,6 +9,7 @@
     <header class="top">
       <div class="brand">⚡ SmartFill <span>Applications</span></div>
       <div class="top-actions">
+        <button id="aiToggle" class="secondary">✦ AI settings</button>
         <button id="cvToggle" class="secondary">Your CV</button>
         <button id="addToggle" class="secondary">+ Add application</button>
         <button id="exportCsv" class="secondary">Export CSV</button>
@@ -24,6 +25,35 @@
       <div class="stat warn"><b id="statFollow">0</b><span>Need a follow-up</span></div>
     </section>
 
+    <section id="aiPanel" class="cv-panel" hidden>
+      <div class="cv-head">
+        <b>✦ AI settings</b>
+        <p>Optional. With your own Gemini or Groq API key, SmartFill can draft answers to application questions and give
+          a detailed match analysis. When you use these, your CV, profile details (not your email, phone or address),
+          the job description and the questions are sent to the provider you choose. Your key is stored only in this
+          browser and is never sent anywhere else.</p>
+      </div>
+      <div class="ai-grid">
+        <label class="ai-provider"><input type="radio" name="aiProvider" value="gemini" checked /> Google Gemini</label>
+        <input id="geminiKey" type="password" placeholder="Gemini API key" autocomplete="off" spellcheck="false" />
+        <input id="geminiModel" placeholder="gemini-2.5-flash" spellcheck="false" />
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Get a key</a>
+
+        <label class="ai-provider"><input type="radio" name="aiProvider" value="groq" /> Groq</label>
+        <input id="groqKey" type="password" placeholder="Groq API key" autocomplete="off" spellcheck="false" />
+        <input id="groqModel" placeholder="llama-3.3-70b-versatile" spellcheck="false" />
+        <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">Get a key</a>
+      </div>
+      <div class="cv-foot">
+        <span id="aiStatus" class="cv-summary"></span>
+        <div class="cv-actions">
+          <button id="aiTest" type="button" class="secondary">Test connection</button>
+          <button id="aiClose" type="button" class="secondary">Close</button>
+          <button id="aiSave" type="button" class="primary">Save</button>
+        </div>
+      </div>
+    </section>
+
     <section id="cvPanel" class="cv-panel" hidden>
       <div class="cv-head">
         <div>
@@ -32,7 +62,13 @@
             from it to score each job. It stays on this device.</p>
         </div>
       </div>
-      <textarea id="cvText" placeholder="Paste your CV here…"></textarea>
+      <div class="cv-upload">
+        <label class="secondary file-btn">
+          Upload CV <input id="cvFile" type="file" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" />
+        </label>
+        <span id="cvFileStatus" class="cv-summary">PDF, Word (.docx) or text. It's read in your browser.</span>
+      </div>
+      <textarea id="cvText" placeholder="…or paste your CV here"></textarea>
       <div class="cv-foot">
         <span id="cvSummary" class="cv-summary"></span>
         <div class="cv-actions">

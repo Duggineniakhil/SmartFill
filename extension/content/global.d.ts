@@ -73,7 +73,35 @@ declare global {
     needsProfile: boolean;
   }
 
-  interface SmartFillResume { text: string; updated_at: string }
+  interface SmartFillResume { text: string; updated_at: string; fileName?: string }
+
+  interface SmartFillAiSettings {
+    provider?: "gemini" | "groq";
+    geminiKey?: string;
+    groqKey?: string;
+    geminiModel?: string;
+    groqModel?: string;
+  }
+
+  interface SmartFillAiMatch {
+    score: number;
+    verdict: "strong" | "partial" | "weak";
+    summary: string;
+    strengths: string[];
+    gaps: string[];
+    tips: string[];
+    provider: string;
+    model: string;
+    at: string;
+  }
+
+  interface SmartFillDraftResult {
+    total: number;
+    drafted: number;
+    skipped: Array<{ label: string; note: string }>;
+    error?: string;
+    code?: string;
+  }
 
   interface SmartFillApplication {
     requirements?: SmartFillRequirements;
@@ -94,6 +122,9 @@ declare global {
   interface SmartFillStorageData {
     smartfill_applications?: Record<string, SmartFillApplication>;
     smartfill_resume?: SmartFillResume;
+    smartfill_ai?: SmartFillAiSettings;
+    smartfill_ai_matches?: Record<string, SmartFillAiMatch>;
+    smartfill_job_texts?: Record<string, { text: string; at: string }>;
     smartfill_job_requirements?: Record<string, { requirements: SmartFillRequirements; at: string }>;
     profile?: Record<string, string>;
     smartfill_profile?: SmartFillProfile;
@@ -118,6 +149,8 @@ declare global {
     runtime: {
       lastError?: Error;
       getURL: (path: string) => string;
+      id?: string;
+      sendMessage: (message: unknown, callback?: (response: unknown) => void) => void;
       onMessage: {
         addListener: (
           callback: (
@@ -152,6 +185,16 @@ declare global {
       labelSimilarity: (a: string, b: string) => number;
       ALIASES: Record<string, string[]>;
       fillNow?: () => Promise<{ filled: number; disabled?: boolean }>;
+      fields?: {
+        setValue: (el: HTMLElement, value: string) => boolean;
+        mark: (el: HTMLElement, status: "filled" | "review" | "missing", title?: string) => void;
+        value: (el: HTMLElement) => string;
+        visible: (el: HTMLElement) => boolean;
+      };
+      ai?: {
+        draftAll: (jobText?: string) => Promise<SmartFillDraftResult>;
+        questions: () => Array<{ id: string; label: string; kind: "short" | "long"; maxLength?: number }>;
+      };
       match?: {
         extractRequirements: (text: string, userSkills?: string) => SmartFillRequirements;
         userFacts: (fields?: Record<string, string>, resume?: string) => SmartFillUserFacts;
@@ -166,6 +209,7 @@ declare global {
         } | null>;
         pageRequirements: () => Promise<SmartFillRequirements | null>;
         jobDescription: (doc: Document) => string;
+        jobText: (key: string) => Promise<string>;
         track: (status: SmartFillApplicationStatus) => Promise<SmartFillApplication | null>;
         jobKey: (href: string) => string;
         jobLink: (href: string) => string;

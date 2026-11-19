@@ -36,6 +36,10 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 
 let apps: Apps = {};
 let cachedReqs: NonNullable<SmartFillStorageData["smartfill_job_requirements"]> = {};
+let aiMatches: NonNullable<SmartFillStorageData["smartfill_ai_matches"]> = {};
+let jobTexts: NonNullable<SmartFillStorageData["smartfill_job_texts"]> = {};
+let aiSettings: SmartFillAiSettings = {};
+const aiBusy = new Set<string>();
 let facts: SmartFillUserFacts | null = null;
 let resumeText = "";
 const openNotes = new Set<string>();
@@ -45,7 +49,10 @@ const matchApi = () => window.__SMARTFILL__?.match;
 
 const PROFILE_DEFAULTS = {
   [KEY]: {}, smartfill_job_requirements: {}, smartfill_profile: { fields: {} }, smartfill_resume: { text: "", updated_at: "" },
+  smartfill_ai: {}, smartfill_ai_matches: {}, smartfill_job_texts: {},
 } as SmartFillStorageData;
+
+const aiReady = () => Boolean((aiSettings.provider === "groq" ? aiSettings.groqKey : aiSettings.geminiKey)?.trim());
 
 function readFacts(d: SmartFillStorageData) {
   resumeText = d.smartfill_resume?.text || "";
@@ -56,6 +63,9 @@ function load() {
   chrome.storage.local.get(PROFILE_DEFAULTS, (d) => {
     apps = d.smartfill_applications || {};
     cachedReqs = d.smartfill_job_requirements || {};
+    aiMatches = d.smartfill_ai_matches || {};
+    jobTexts = d.smartfill_job_texts || {};
+    aiSettings = d.smartfill_ai || {};
     readFacts(d);
     if (!$<HTMLTextAreaElement>("cvText").value) $<HTMLTextAreaElement>("cvText").value = resumeText;
     renderCvSummary();
@@ -178,6 +188,20 @@ function renderCard(a: SmartFillApplication): HTMLElement {
 
   const top = el("div", "top-row");
   top.append(el("div", "company", a.company));
+  const scores = el("div", "scores");
+  const ai = aiMatches[a.id];
+  if (ai) {
+    const pill = el("span", "score ai", `✦ ${ai.score}%`);
+    pill.title = [
+      `AI match (${ai.provider}): ${ai.score}% — ${ai.verdict}`,
+      ai.summary,
+      ai.strengths.length ? `Strengths: ${ai.strengths.join("; ")}` : "",
+      ai.gaps.length ? `Gaps: ${ai.gaps.join("; ")}` : "",
+      ai.tips.length ? `Tips: ${ai.tips.join("; ")}` : "",
+    ].filter(Boolean).join("\n");
+    scores.append(pill);
+  }
+  top.append(scores);
   const match = matchFor(a);
   if (match && match.score !== null) {
     const pill = el("span", `score ${match.level}`, `${match.score}%`);
@@ -188,7 +212,7 @@ function renderCard(a: SmartFillApplication): HTMLElement {
       match.missingPreferred.length ? `Nice to have: ${match.missingPreferred.join(", ")}` : "",
       match.yearsNote || "", match.degreeNote || "",
     ].filter(Boolean).join("\n");
-    top.append(pill);
+    scores.append(pill);
   }
   card.append(top, el("div", "role", a.title));
   const meta = [a.location, a.platform].filter(Boolean).join(" · ");
@@ -199,6 +223,7 @@ function renderCard(a: SmartFillApplication): HTMLElement {
     const more = match.missing.length > 3 ? ` +${match.missing.length - 3}` : "";
     card.append(el("div", "missing", `Missing: ${match.missing.slice(0, 3).join(", ")}${more}`));
   }
+  if (ai?.summary) card.append(el("div", "ai-summary", ai.summary));
   if (needsFollowUp(a)) {
     const days = Math.floor((Date.now() - lastChange(a)) / DAY);
     card.append(el("div", "follow", `No reply in ${days} days — follow up?`));
@@ -243,6 +268,15 @@ function renderCard(a: SmartFillApplication): HTMLElement {
     controls.append(link);
   }
 
+  if (aiReady()) {
+    const aiBtn = el("button", "ai", aiBusy.has(a.id) ? "…" : "✦");
+    aiBtn.type = "button";
+    aiBtn.title = ai ? "Run the AI match again" : "AI match: score this job against your CV";
+    aiBtn.disabled = aiBusy.has(a.id);
+    aiBtn.addEventListener("click", () => runAiMatch(a));
+    controls.append(aiBtn);
+  }
+
   const del = el("button", "del", "×");
   del.type = "button";
   del.title = "Delete";
@@ -265,7 +299,7 @@ function render() {
   board.hidden = list.length === 0;
   board.replaceChildren();
   const byMatch = $<HTMLSelectElement>("sortBy").value === "match";
-  const scoreOf = (a: SmartFillApplication) => matchFor(a)?.score ?? -1;
+  const scoreOf = (a: SmartFillApplication) => aiMatches[a.id]?.score ?? matchFor(a)?.score ?? -1;
   const visible = list.filter(matchesFilters).sort((x, y) =>
     (byMatch ? scoreOf(y) - scoreOf(x) : 0) || lastChange(y) - lastChange(x));
 
@@ -371,11 +405,198 @@ function toggleCv(show = $("cvPanel").hidden) {
   if (show) $("cvText").focus();
 }
 
+// ─── AI ───────────────────────────────────────────────────────────────────────
+
+function sendAi(message: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "SMARTFILL_AI", ...message }, (res) => {
+      resolve((res as Record<string, unknown>) || { ok: false, error: "No reply from SmartFill's background worker." });
+    });
+  });
+}
+
+function runAiMatch(a: SmartFillApplication) {
+  aiBusy.add(a.id);
+  render();
+  sendAi({ task: "match", job: { title: a.title, company: a.company, location: a.location, text: jobTexts[a.id]?.text || "" } })
+    .then((res) => {
+      aiBusy.delete(a.id);
+      if (!res.ok) {
+        alert(`AI match failed: ${res.error}`);
+        render();
+        return;
+      }
+      chrome.storage.local.get({ smartfill_ai_matches: {} } as SmartFillStorageData, (d) => {
+        chrome.storage.local.set({ smartfill_ai_matches: { ...d.smartfill_ai_matches, [a.id]: res.match } }, load);
+      });
+    });
+}
+
+function aiForm(): SmartFillAiSettings {
+  const provider = (document.querySelector('input[name="aiProvider"]:checked') as HTMLInputElement)?.value === "groq" ? "groq" : "gemini";
+  return {
+    provider,
+    geminiKey: $<HTMLInputElement>("geminiKey").value.trim(),
+    groqKey: $<HTMLInputElement>("groqKey").value.trim(),
+    geminiModel: $<HTMLInputElement>("geminiModel").value.trim(),
+    groqModel: $<HTMLInputElement>("groqModel").value.trim(),
+  };
+}
+
+function fillAiForm() {
+  const radio = document.querySelector(`input[name="aiProvider"][value="${aiSettings.provider === "groq" ? "groq" : "gemini"}"]`) as HTMLInputElement;
+  if (radio) radio.checked = true;
+  $<HTMLInputElement>("geminiKey").value = aiSettings.geminiKey || "";
+  $<HTMLInputElement>("groqKey").value = aiSettings.groqKey || "";
+  $<HTMLInputElement>("geminiModel").value = aiSettings.geminiModel || "";
+  $<HTMLInputElement>("groqModel").value = aiSettings.groqModel || "";
+}
+
+function aiStatus(text: string, kind: "" | "ok" | "err" = "") {
+  const out = $("aiStatus");
+  out.className = `cv-summary ${kind}`;
+  out.textContent = text;
+}
+
+function toggleAi(show = $("aiPanel").hidden) {
+  $("aiPanel").hidden = !show;
+  if (show) {
+    fillAiForm();
+    aiStatus(aiReady() ? "AI is set up." : "No API key saved yet.", aiReady() ? "ok" : "");
+  }
+}
+
+$("aiToggle").addEventListener("click", () => toggleAi());
+$("aiClose").addEventListener("click", () => toggleAi(false));
+$("aiSave").addEventListener("click", () => {
+  chrome.storage.local.set({ smartfill_ai: aiForm() }, () => {
+    aiStatus("Saved.", "ok");
+    load();
+  });
+});
+$("aiTest").addEventListener("click", async () => {
+  const settings = aiForm();
+  aiStatus("Testing…");
+  const res = await sendAi({ task: "test", settings });
+  if (res.ok) aiStatus(`Connected to ${res.provider === "groq" ? "Groq" : "Gemini"} (${res.model}). Remember to Save.`, "ok");
+  else aiStatus(String(res.error), "err");
+});
+if (location.hash === "#ai") toggleAi(true);
+
+// ─── CV upload ────────────────────────────────────────────────────────────────
+
+const MAX_PDF_PAGES = 20;
+
+async function pdfText(buf: ArrayBuffer): Promise<{ text: string; pages: number }> {
+  const pdfjs = await import(chrome.runtime.getURL("vendor/pdfjs/pdf.min.mjs"));
+  pdfjs.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("vendor/pdfjs/pdf.worker.min.mjs");
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise;
+  const pages = Math.min(doc.numPages, MAX_PDF_PAGES);
+  const out: string[] = [];
+  for (let i = 1; i <= pages; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    let text = "";
+    for (const item of content.items as Array<{ str?: string; hasEOL?: boolean }>) {
+      text += item.str || "";
+      if (item.hasEOL) text += "\n";
+    }
+    out.push(text.trim());
+  }
+  return { text: out.join("\n\n"), pages };
+}
+
+// Minimal .zip reader: finds one entry and inflates it with the browser's
+// built-in DecompressionStream, so .docx needs no extra library.
+async function unzipEntry(buf: ArrayBuffer, name: string): Promise<string | null> {
+  const view = new DataView(buf);
+  const bytes = new Uint8Array(buf);
+  let eocd = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) return null;
+  const count = view.getUint16(eocd + 10, true);
+  let off = view.getUint32(eocd + 16, true);
+  const decoder = new TextDecoder();
+  for (let n = 0; n < count && off + 46 <= buf.byteLength; n++) {
+    if (view.getUint32(off, true) !== 0x02014b50) break;
+    const method = view.getUint16(off + 10, true);
+    const size = view.getUint32(off + 20, true);
+    const nameLen = view.getUint16(off + 28, true);
+    const extraLen = view.getUint16(off + 30, true);
+    const commentLen = view.getUint16(off + 32, true);
+    const local = view.getUint32(off + 42, true);
+    const entry = decoder.decode(bytes.subarray(off + 46, off + 46 + nameLen));
+    if (entry === name) {
+      const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+      const data = bytes.slice(start, start + size);
+      if (method === 0) return decoder.decode(data);
+      if (method !== 8) return null;
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      return new Response(stream).text();
+    }
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return null;
+}
+
+async function docxText(buf: ArrayBuffer): Promise<string> {
+  const xml = await unzipEntry(buf, "word/document.xml");
+  if (!xml) throw new Error("That doesn't look like a Word .docx file.");
+  const marked = xml
+    .replace(/<w:tab\/>/g, "\t")
+    .replace(/<w:(br|cr)\b[^>]*\/>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<[^>]+>/g, "");
+  const decoded = new DOMParser().parseFromString(`<!doctype html><body>${marked.replace(/</g, "&lt;")}`, "text/html").body.textContent || "";
+  return decoded.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+let uploadedName = "";
+
+$("cvFile").addEventListener("change", async () => {
+  const input = $<HTMLInputElement>("cvFile");
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  const status = $("cvFileStatus");
+  status.className = "cv-summary";
+  status.textContent = `Reading ${file.name}…`;
+  try {
+    if (file.size > 10 * 1024 * 1024) throw new Error("That file is over 10 MB.");
+    const lower = file.name.toLowerCase();
+    let text = "";
+    let detail = "";
+    if (lower.endsWith(".pdf") || file.type === "application/pdf") {
+      const out = await pdfText(await file.arrayBuffer());
+      text = out.text;
+      detail = `${out.pages} page${out.pages === 1 ? "" : "s"}`;
+    } else if (lower.endsWith(".docx")) {
+      text = await docxText(await file.arrayBuffer());
+    } else if (lower.endsWith(".doc")) {
+      throw new Error("Old .doc files can't be read. Save it as .docx or PDF and try again.");
+    } else {
+      text = await file.text();
+    }
+    if (text.replace(/\s/g, "").length < 50) {
+      throw new Error("Couldn't find text in that file. If it's a scanned PDF, paste your CV instead.");
+    }
+    $<HTMLTextAreaElement>("cvText").value = text;
+    uploadedName = file.name;
+    status.className = "cv-summary ok";
+    status.textContent = `Read ${file.name}${detail ? ` (${detail})` : ""}. Check the text below, then Save CV.`;
+  } catch (e) {
+    status.className = "cv-summary err";
+    status.textContent = (e as Error).message || "Couldn't read that file.";
+  }
+});
+
 $("cvToggle").addEventListener("click", () => toggleCv());
 $("cvCancel").addEventListener("click", () => toggleCv(false));
 $("cvSave").addEventListener("click", () => {
   const text = $<HTMLTextAreaElement>("cvText").value.slice(0, 50000);
-  chrome.storage.local.set({ smartfill_resume: { text, updated_at: new Date().toISOString() } }, () => {
+  chrome.storage.local.set({ smartfill_resume: { text, updated_at: new Date().toISOString(), fileName: uploadedName || undefined } }, () => {
     const btn = $("cvSave");
     btn.textContent = "Saved";
     setTimeout(() => { btn.textContent = "Save CV"; }, 1200);
@@ -391,7 +612,8 @@ $("followOnly").addEventListener("change", render);
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (changes.smartfill_profile || changes.smartfill_resume || changes.smartfill_job_requirements) {
+  if (changes.smartfill_profile || changes.smartfill_resume || changes.smartfill_job_requirements
+    || changes.smartfill_ai || changes.smartfill_ai_matches || changes.smartfill_job_texts) {
     load();
     return;
   }

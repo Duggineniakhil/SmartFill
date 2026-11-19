@@ -180,8 +180,8 @@
         review: "SmartFill isn't sure — review this field",
         missing: "SmartFill has nothing saved for this field",
     };
-    function markField(el, status) {
-        if (el.dataset.smartfillStatus === status)
+    function markField(el, status, title) {
+        if (el.dataset.smartfillStatus === status && !title)
             return;
         if (el.dataset.smartfillStatus === undefined) {
             el.dataset.smartfillOutline = el.style.getPropertyValue("outline");
@@ -195,7 +195,7 @@
         el.style.setProperty("outline-offset", "1px", "important");
         // Explain the colour on hover, without overwriting the page's own tooltip.
         if (!el.title || el.dataset.smartfillTitle === "1") {
-            el.title = STATUS_TITLES[status];
+            el.title = title || STATUS_TITLES[status];
             el.dataset.smartfillTitle = "1";
         }
     }
@@ -499,6 +499,14 @@
     // The popup calls fillNow() in every frame via chrome.scripting and sums the
     // counts; the message is kept for callers that only target the top frame.
     window.__SMARTFILL__.fillNow = fillNow;
+    // Shared with aiDraft.ts so drafted answers get the same value handling and
+    // the same outlines.
+    window.__SMARTFILL__.fields = {
+        setValue: setNativeValue,
+        mark: markField,
+        value: fieldValue,
+        visible: (el) => allFields(el.parentElement || document).includes(el),
+    };
     chrome.runtime.onMessage.addListener((msg, _sender, send) => {
         if (window !== window.top)
             return;

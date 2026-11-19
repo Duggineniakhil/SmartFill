@@ -8,6 +8,7 @@ import { chromium } from "@playwright/test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { deflateRawSync, crc32 } from "node:zlib";
 
 const EXT = resolve(process.env.SMARTFILL_EXT || "extension");
 const ORIGIN = "http://smartfill.test";
@@ -64,10 +65,52 @@ const JOB = `<!doctype html><html><head><title>Backend Engineer - Acme Robotics<
 <h1>Backend Engineer</h1>
 <div><label for="jn">Full Name</label><input id="jn"></div>
 <div><label for="cv">Resume</label><input id="cv" type="file"></div>
+<div><label for="jwhy">Why do you want to work at Acme Robotics?</label><textarea id="jwhy"></textarea></div>
 <button type="button" id="jnext">Next</button>
 <button type="button" id="jsubmit">Submit application</button>
 </body></html>`;
 const PAGES = { "/done": "<!doctype html><p>thanks</p>", "/split": SPLIT, "/gform": GFORM, "/host": HOST, "/frame": FRAME, "/careers/backend-engineer/apply": JOB };
+
+// A one-page PDF whose text is the given lines (Helvetica, no compression).
+function makePdf(lines) {
+  const esc = (t) => t.replace(/[\\()]/g, (c) => `\\${c}`);
+  const stream = `BT /F1 12 Tf 72 720 Td 16 TL ${lines.map((l) => `(${esc(l)}) Tj T*`).join(" ")} ET`;
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let out = "%PDF-1.4\n";
+  const offsets = objs.map((o, i) => { const at = out.length; out += `${i + 1} 0 obj\n${o}\nendobj\n`; return at; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
+
+// A minimal .docx: a zip holding word/document.xml with one paragraph per line.
+function makeDocx(lines) {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${
+    lines.map((l) => `<w:p><w:r><w:t>${l.replace(/&/g, "&amp;")}</w:t></w:r></w:p>`).join("")}</w:body></w:document>`;
+  const data = Buffer.from(xml, "utf8");
+  const packed = deflateRawSync(data);
+  const name = Buffer.from("word/document.xml");
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(crc32(data), 14); local.writeUInt32LE(packed.length, 18); local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(name.length, 26);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(crc32(data), 16); central.writeUInt32LE(packed.length, 20); central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(name.length, 28); central.writeUInt32LE(0, 42);
+  const centralStart = local.length + name.length + packed.length;
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length + name.length, 12); end.writeUInt32LE(centralStart, 16);
+  return Buffer.concat([local, name, packed, central, name, end]);
+}
 
 let failures = 0;
 const stable = (v) => JSON.stringify(v, (_k, x) =>
@@ -275,6 +318,66 @@ try {
   await board.waitForSelector('[data-column="interview"] .card');
   check("tracker page: moved to Interview", Object.values((await storage()).smartfill_applications).map((a) => a.status), ["interview"]);
   if (process.env.SMARTFILL_SHOT) await board.screenshot({ path: process.env.SMARTFILL_SHOT });
+
+  // 9. AI (Gemini stubbed inside the service worker; no real request is made).
+  await sw.evaluate(() => {
+    self.__aiCalls = [];
+    self.fetch = async (url, init) => {
+      const body = JSON.parse(init.body);
+      self.__aiCalls.push({ url: String(url), key: init.headers["x-goog-api-key"], body: init.body });
+      const prompt = body.contents[0].parts[0].text;
+      let reply;
+      if (/QUESTIONS \(JSON\)/.test(prompt)) {
+        const qs = JSON.parse(prompt.split("QUESTIONS (JSON):\n")[1]);
+        reply = { answers: qs.map((q) => ({ id: q.id, answer: `Drafted: ${q.question}`, note: "" })) };
+      } else if (/connectivity check/.test(body.systemInstruction.parts[0].text)) {
+        reply = { ok: true };
+      } else {
+        reply = { score: 81, verdict: "strong", summary: "Solid backend fit.", strengths: ["Python"], gaps: ["Docker"], tips: [] };
+      }
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] } }] }),
+        { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+  });
+  await sw.evaluate(() => chrome.storage.local.set({
+    smartfill_ai: { provider: "gemini", geminiKey: "test-key" },
+    smartfill_profile: { fields: { full_name: "Ada Lovelace", email: "ada@example.com" } },
+  }));
+  await page.bringToFront();
+  await page.goto(`${ORIGIN}/careers/backend-engineer/apply`);
+  await page.waitForSelector(".smartfill-ai-draft", { timeout: 5000 });
+  await page.click(".smartfill-ai-draft");
+  await page.waitForFunction(() => document.getElementById("jwhy").value !== "", null, { timeout: 5000 });
+  check("ai: drafted answer filled", await page.inputValue("#jwhy"), "Drafted: Why do you want to work at Acme Robotics?");
+  check("ai: drafted answer marked for review", await page.getAttribute("#jwhy", "data-smartfill-status"), "review");
+  const calls = await sw.evaluate(() => self.__aiCalls);
+  check("ai: key sent as header, job text and CV included, email left out",
+    [calls[0]?.key, calls[0]?.url.includes("test-key"), /payment APIs/.test(calls[0]?.body), /Backend developer/.test(calls[0]?.body), /ada@example\.com/.test(calls[0]?.body)],
+    ["test-key", false, true, true, false]);
+
+  await board.bringToFront();
+  await board.reload();
+  await board.click('[data-column="interview"] .card button.ai');
+  await board.waitForSelector('[data-column="interview"] .card .score.ai', { timeout: 5000 });
+  check("ai: match on the board", await board.textContent('[data-column="interview"] .card .score.ai'), "✦ 81%");
+
+  await board.click("#aiToggle");
+  await board.click("#aiTest");
+  await board.waitForFunction(() => /Connected|rejected|error/i.test(document.getElementById("aiStatus").textContent), null, { timeout: 5000 });
+  check("ai: test connection", await board.textContent("#aiStatus"), "Connected to Gemini (gemini-2.5-flash). Remember to Save.");
+
+  await board.click("#cvToggle");
+  await board.setInputFiles("#cvFile", { name: "cv.pdf", mimeType: "application/pdf",
+    buffer: makePdf(["Ada Lovelace", "Analyst, Analytical Engines Ltd (2019 - 2024)", "Skills: Python, SQL, Tableau"]) });
+  await board.waitForFunction(() => /Read cv\.pdf|Couldn/.test(document.getElementById("cvFileStatus").textContent), null, { timeout: 10000 });
+  check("cv upload: pdf text", [await board.textContent("#cvFileStatus"), /Skills: Python, SQL, Tableau/.test(await board.inputValue("#cvText"))],
+    ["Read cv.pdf (1 page). Check the text below, then Save CV.", true]);
+  await board.setInputFiles("#cvFile", { name: "cv.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: makeDocx(["Ada Lovelace", "Research & analysis, 2019 - 2024", "Skills: Python, R, statistics and data visualisation"]) });
+  await board.waitForFunction(() => /Read cv\.docx|Couldn|doesn/.test(document.getElementById("cvFileStatus").textContent), null, { timeout: 10000 });
+  check("cv upload: docx text", await board.inputValue("#cvText"),
+    "Ada Lovelace\nResearch & analysis, 2019 - 2024\nSkills: Python, R, statistics and data visualisation");
 } finally {
   await context.close();
   rmSync(userDataDir, { recursive: true, force: true });

@@ -4,7 +4,7 @@
   # SmartFill
 
   **Fill job applications in seconds, see how well you match, and keep track of every one.** <br>
-  *A privacy-first browser extension. Everything stays on your device.*
+  *A privacy-first browser extension. Your data stays on your device unless you turn on AI with your own key.*
 
   <br />
 
@@ -27,7 +27,8 @@ Applying for jobs means typing the same name, email, phone number and answers in
 guessing which postings are worth your time, and losing track of where you applied.
 
 SmartFill learns your details from forms you fill once, fills them in for you next time, scores each job
-against your CV, and logs every application you submit — without sending anything off your device.
+against your CV, and logs every application you submit — all on your device. Add your own Gemini or Groq API
+key and it can also draft answers to application questions from your CV and give a detailed AI match analysis.
 
 **It never submits anything for you.** It fills the form; you review it and click Submit yourself.
 
@@ -50,6 +51,8 @@ against your CV, and logs every application you submit — without sending anyth
 - **Never learns what it shouldn't.** Passwords, OTPs, card, bank and ID numbers, search boxes and login
   forms are never saved.
 - **Works in embedded forms** such as Greenhouse application iframes and Google Forms.
+- **✦ Draft with AI** (optional) appears on long questions like "Tell us about a project you're proud of" —
+  see [AI drafting](#ai-drafting-and-ai-match-optional).
 
 <br clear="right" />
 
@@ -64,7 +67,8 @@ Open the popup on a job posting to see how well it fits you before you spend tim
 - It compares them with **your CV** and learned profile: skills count for 70%, experience for 20% and
   degree for 10%. Anything the job doesn't mention is left out instead of counting against you.
 - You see the score, the skills you have, what's missing, and how your experience and degree compare.
-- Scoring runs entirely in your browser. Your CV is never uploaded anywhere.
+- This score is worked out entirely in your browser; your CV isn't sent anywhere for it. The popup also has
+  optional **✦ Draft answers** and **✦ AI match** buttons (see below).
 
 <br clear="right" />
 
@@ -83,17 +87,47 @@ Click **Open tracker** in the popup for a full-page board of every application.
 - **Notes, search, filters, sort by best match, manual entries and CSV export.**
 - **No duplicates.** A job's description page, its apply page and an embedded form all count as one job.
 
-Paste your CV once in the **Your CV** panel so every job can be scored:
+Upload your CV (PDF, Word or text) or paste it once in the **Your CV** panel so every job can be scored.
+Files are read inside your browser:
 
 <p align="center">
   <img src="docs/screenshots/cv-panel.png" alt="The Your CV panel: a plain-text CV and a summary saying SmartFill found 15 skills, about 5.3 years of experience and a bachelor's degree" width="900" />
 </p>
 
+### AI drafting and AI match (optional)
+
+Bring your own **Google Gemini** or **Groq** API key (both have free tiers) and SmartFill can:
+
+- **Draft answers to custom questions** — "Why do you want to work here?", "Tell us about a project you're
+  proud of", "Will you need sponsorship?" — written in the first person from **your CV** and the **job
+  description**. Use **✦ Draft answers** in the popup for every question on the page, or the **✦ Draft**
+  button on a single question.
+  - Drafts are outlined **amber**: read and edit each one. SmartFill never submits.
+  - The AI is told to use only facts from your CV. When your CV doesn't cover a question (salary, visa,
+    start date), it leaves the field empty and tells you why instead of making something up.
+  - Name, email, phone and other profile fields are still filled by the on-device autofill, not the AI.
+- **Give an AI match analysis** — a 0–100 score with a summary, strengths, gaps and tips for positioning your
+  application. Run it from the popup or with the **✦** button on any tracker card; the board shows it next to
+  the on-device score, and "Best match" sorting uses it when it's there.
+
+Set it up in the tracker under **✦ AI settings**: pick a provider, paste your key, optionally change the model
+(defaults: `gemini-2.5-flash` and `llama-3.3-70b-versatile`), and click **Test connection**.
+
+<p align="center">
+  <img src="docs/screenshots/ai-settings.png" alt="The AI settings panel with Gemini and Groq key and model fields, Test connection and Save" width="900" />
+</p>
+
+**What is sent, and when:** only when you click an AI button, SmartFill sends your CV, your profile details
+except email, phone and address, the job description and the questions to the provider you chose. Your API
+key is stored only in this browser, is used only by the extension's background worker, and is sent only to
+that provider. Nothing is sent if you never add a key.
+
 ### Private by design
 
-There is no server, account or database. Your profile, CV and applications live in `chrome.storage.local`
-on your machine. The extension only needs access to the pages you visit, to read and fill their forms,
-and to its own local storage.
+There is no SmartFill server, account or database. Your profile, CV, API key and applications live in
+`chrome.storage.local` on your machine. Autofill, colour-coding, the on-device match score and the tracker
+work entirely offline; only the optional AI features contact Gemini or Groq, and only when you ask. The
+extension needs access to the pages you visit, to read and fill their forms, and to its own local storage.
 
 ## Getting Started
 
@@ -104,8 +138,8 @@ and to its own local storage.
 3. Turn on **Developer mode**.
 4. Click **Load unpacked** and pick the unzipped folder (or the `extension` folder of this repository).
 
-Then fill one application form by hand, paste your CV in the tracker's **Your CV** panel, and SmartFill
-is ready.
+Then fill one application form by hand, upload or paste your CV in the tracker's **Your CV** panel, and
+SmartFill is ready. For AI drafting, add a Gemini or Groq key under **✦ AI settings**.
 
 ### Develop locally
 
@@ -120,10 +154,10 @@ npm install
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Starts the landing page and dashboard at `http://localhost:8080`. |
-| `npm run build:extension` | Compiles the content scripts, popup and tracker into the checked-in `.js` files under `extension/`. |
+| `npm run build:extension` | Compiles the content scripts, popup, tracker and background worker into the checked-in `.js` files under `extension/`, and copies pdf.js into `extension/vendor/`. |
 | `npm run package:extension` | Builds the extension and rebuilds `public/SmartFill.zip`, the file the landing page serves. |
 | `npm test` | Runs the unit tests (Vitest + jsdom). |
-| `npm run test:e2e` | Loads the unpacked extension into Microsoft Edge and checks learning, autofill, iframes, the popup, "Fill this page", the tracker and the match score end to end. |
+| `npm run test:e2e` | Loads the unpacked extension into Microsoft Edge and checks learning, autofill, iframes, the popup, "Fill this page", the tracker, the match score, CV upload and AI drafting end to end. AI calls are stubbed, so no key is needed. |
 | `npm run screenshots` | Regenerates the images in `docs/screenshots/` from the real extension, using a made-up profile. |
 
 `test:e2e` and `screenshots` use Edge by default. Set `SMARTFILL_BROWSER=chromium` to use Playwright's
@@ -139,9 +173,13 @@ extension/
     autofill.ts       learning on submit, autofill, SF badges, colour-coded outlines
     matchScore.ts     on-device job requirement extraction and match scoring
     tracker.ts        job-page detection and logging applications on submit
-  popup/              the toolbar popup: job card, match score, profile, settings
-  tracker/            the full-page application board and CV panel
-  background/         install defaults
+    aiDraft.ts        finding custom questions and filling AI-drafted answers
+  popup/              the toolbar popup: job card, match score, AI actions, profile, settings
+  tracker/            the full-page application board, CV upload and AI settings
+  background/
+    background.ts     install defaults; runs AI requests so pages never see your key
+    ai.ts             Gemini and Groq client: prompts, requests and response parsing
+  vendor/pdfjs/       pdf.js (Apache-2.0), used to read uploaded PDF CVs
 src/                  React landing page, dashboard and settings (Vite)
 e2e/                  end-to-end test that drives the real extension
 scripts/              build, packaging and screenshot scripts
@@ -156,12 +194,15 @@ docs/screenshots/     images used in this README
 - [x] Colour-coded fields (filled, review, missing)
 - [x] Application tracker
 - [x] On-device match score from your CV
-- [ ] Answers to custom questions drafted from your CV and the job description
+- [x] CV upload (PDF, Word, text)
+- [x] AI-drafted answers to custom questions from your CV and the job description (Gemini or Groq)
+- [x] Optional AI match analysis
+- [ ] AI answers for dropdown and multiple-choice questions
 - [ ] Multiple profiles
 - [ ] Import / export profiles
-- [ ] Optional AI-assisted matching
 - [ ] Cloud sync
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License. It bundles [pdf.js](https://github.com/mozilla/pdf.js)
+(Apache-2.0) in `extension/vendor/pdfjs/`.

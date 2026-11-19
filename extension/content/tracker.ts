@@ -9,6 +9,9 @@
   const APPLICATIONS_KEY = "smartfill_applications";
   const REQUIREMENTS_KEY = "smartfill_job_requirements";
   const REQUIREMENTS_MAX = 100;
+  const TEXTS_KEY = "smartfill_job_texts";
+  const TEXTS_MAX = 30;
+  const TEXT_LIMIT = 12000;
   const MIN_DESCRIPTION = 200;
   const STATUS_RANK: Record<SmartFillApplicationStatus, number> = {
     interested: 0, applied: 1, interview: 2, offer: 3, rejected: 4, withdrawn: 4,
@@ -275,10 +278,29 @@
     return match.extractRequirements(text, await readUserSkills());
   }
 
+  // The description itself is kept for AI drafting on the apply page.
+  function cacheText(key: string, text: string): Promise<void> {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([TEXTS_KEY], (d) => {
+        const all = { ...(d[TEXTS_KEY] || {}), [key]: { text: text.slice(0, TEXT_LIMIT), at: new Date().toISOString() } };
+        const trimmed = Object.fromEntries(Object.entries(all)
+          .sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, TEXTS_MAX));
+        chrome.storage.local.set({ [TEXTS_KEY]: trimmed }, () => resolve());
+      });
+    });
+  }
+
+  function cachedText(key: string): Promise<string> {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([TEXTS_KEY], (d) => resolve(d[TEXTS_KEY]?.[key]?.text || ""));
+    });
+  }
+
   async function requirementsFor(job: SmartFillJobInfo): Promise<SmartFillRequirements | null> {
     const here = await requirementsHere(document);
     if (here && (here.required.length || here.preferred.length || here.years !== null)) {
       await cacheRequirements(job.key, here);
+      await cacheText(job.key, jobDescription(document));
       return here;
     }
     return cachedRequirements(job.key);
@@ -404,6 +426,11 @@
       return requirementsHere(document);
     },
     jobDescription,
+    // The description on this page, else the one cached for this job.
+    async jobText(key: string) {
+      const here = jobDescription(document);
+      return here || (key ? cachedText(key) : "");
+    },
     async track(status: SmartFillApplicationStatus) {
       const job = currentJob();
       return job ? record(job, status) : null;

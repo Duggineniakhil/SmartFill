@@ -103,3 +103,23 @@ button.secondary:hover { background: #083344; }
 .match .line { color: #cbd5e1; overflow-wrap: anywhere; }
 .match .line b { color: #9ca3af; font-weight: 600; }
 .match .muted { color: #6b7280; }
+
+.ai-section { margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px; }
+.ai-section[hidden], .ai-btn[hidden], .ai-out[hidden], .link-btn[hidden] { display: none; }
+.ai-actions { display: flex; gap: 6px; }
+.ai-btn {
+  flex: 1; background: transparent; color: #c4b5fd; border: 1px solid #4c1d95;
+  padding: 7px 10px; border-radius: 3px; font-weight: 600; cursor: pointer;
+}
+.ai-btn:hover { background: #2e1065; }
+.ai-btn:disabled { opacity: .6; cursor: progress; }
+.ai-out {
+  background: #140f24; border: 1px solid #2e1065; border-radius: 4px; padding: 8px 10px;
+  font-size: 12px; display: flex; flex-direction: column; gap: 4px; color: #ddd6fe;
+}
+.ai-out .err { color: #fca5a5; }
+.ai-out .head { display: flex; gap: 8px; align-items: center; }
+.ai-out .muted { color: #a1a1aa; }
+.ai-out b { color: #a78bfa; font-weight: 600; }
+.link-btn { background: none; border: 0; color: #a78bfa; cursor: pointer; text-align: left; padding: 0; font: inherit; font-size: 12px; }
+.link-btn:hover { text-decoration: underline; }
