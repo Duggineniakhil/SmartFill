@@ -5,6 +5,7 @@
 //
 // Branded Chrome 137+ ignores --load-extension, so Edge or Playwright's Chromium is needed.
 import { chromium } from "@playwright/test";
+import { build } from "esbuild";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -74,6 +75,13 @@ const JOB = `<!doctype html><html><head><title>Backend Engineer - Acme Robotics<
 <button type="button" id="jnext">Next</button>
 <button type="button" id="jsubmit">Submit application</button>
 </body></html>`;
+// Real react-select (Greenhouse's newer boards) and a Workday-style button.
+const REACT_BUNDLE = (await build({
+  entryPoints: ["e2e/fixtures/reactSelectForm.jsx"], bundle: true, write: false, format: "iife",
+  jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, logLevel: "error",
+})).outputFiles[0].text;
+const REACT_FORM = `<!doctype html><html><body><div id="root"></div><script src="/react-form.js"></script></body></html>`;
+
 const PAGES = { "/done": "<!doctype html><p>thanks</p>", "/split": SPLIT, "/gform": GFORM, "/host": HOST, "/frame": FRAME, "/careers/backend-engineer/apply": JOB };
 
 // A one-page PDF whose text is the given lines (Helvetica, no compression).
@@ -136,6 +144,8 @@ const context = await chromium.launchPersistentContext(userDataDir, {
 try {
   await context.route(`${ORIGIN}/**`, (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname === "/react-form.js") return route.fulfill({ status: 200, contentType: "text/javascript", body: REACT_BUNDLE });
+    if (url.pathname === "/react-form") return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: REACT_FORM });
     const body = PAGES[url.pathname] ?? FORM;
     return route.fulfill({ status: 200, contentType: "text/html", body });
   });
@@ -335,8 +345,10 @@ try {
       if (/QUESTIONS \(JSON\)/.test(prompt)) {
         const qs = JSON.parse(prompt.split("QUESTIONS (JSON):\n")[1]);
         reply = { answers: qs.map((q) => (q.type === "single"
-          ? { id: q.id, choice: q.options[q.options.length - 1], note: "" }
-          : { id: q.id, answer: `Drafted: ${q.question}`, note: "" })) };
+          ? { id: q.id, choice: /authorized/.test(q.question) ? "Yes" : q.options[q.options.length - 1], note: "" }
+          : q.type === "multi"
+            ? { id: q.id, choices: q.options.filter((o) => o === "Python" || o === "SQL"), note: "" }
+            : { id: q.id, answer: `Drafted: ${q.question}`, note: "" })) };
       } else if (/connectivity check/.test(body.systemInstruction.parts[0].text)) {
         reply = { ok: true };
       } else {
@@ -374,6 +386,35 @@ try {
   check("ai: dropdown and radio answered", [drafted?.drafted, await page.inputValue("#jlevel"),
     await page.isChecked('input[name="reloc"][value="n"]'), await page.isChecked("#jconsent")], [2, "m", true, false]);
   check("ai: radio group marked for review", await page.getAttribute("fieldset", "data-smartfill-status"), "review");
+
+  // Custom dropdowns: real react-select (single and multi) and a Workday-style button.
+  await page.goto(`${ORIGIN}/react-form`);
+  await page.waitForSelector("#level");
+  const customAsked = await sw.evaluate(async (origin) => {
+    const [tab] = await chrome.tabs.query({ url: `${origin}/*` });
+    const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => window.__SMARTFILL__?.ai?.questions() ?? [] });
+    return r.result.map((q) => q.label);
+  }, ORIGIN);
+  check("ai: custom dropdowns found", customAsked,
+    ["What is your experience level?", "Which languages do you use professionally?", "Are you legally authorized to work in Germany?"]);
+  const customDrafted = await sw.evaluate(async (origin) => {
+    const [tab] = await chrome.tabs.query({ url: `${origin}/*` });
+    const [r] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => window.__SMARTFILL__?.ai?.draftAll() ?? null });
+    return r.result;
+  }, ORIGIN);
+  const sentOptions = await sw.evaluate(() => {
+    const prompt = JSON.parse(self.__aiCalls[self.__aiCalls.length - 1].body).contents[0].parts[0].text;
+    return JSON.parse(prompt.split("QUESTIONS (JSON):\n")[1]).map((q) => [q.type, q.options]);
+  });
+  check("ai: custom dropdown options read from the open menus", sentOptions, [
+    ["single", ["Junior (0-2 years)", "Mid-level (3-5 years)", "Senior (6+ years)"]],
+    ["multi", ["Python", "Go", "SQL", "Rust"]],
+    ["single", ["Yes", "No"]],
+  ]);
+  check("ai: react-select and Workday values set in React state",
+    [customDrafted?.drafted, await page.textContent("#out-level"), await page.textContent("#out-langs"), await page.textContent("#out-auth"),
+      await page.locator('[role="listbox"]').count()],
+    [3, "l2", "python,sql", "Yes", 0]);
 
   await board.bringToFront();
   await board.reload();

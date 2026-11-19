@@ -106,8 +106,10 @@ Bring your own **Google Gemini** or **Groq** API key (both have free tiers) and 
   - The AI is told to use only facts from your CV. When your CV doesn't cover a question (salary, visa,
     start date), it leaves the field empty and tells you why instead of making something up.
   - **Dropdowns, radio buttons and checkbox groups** are answered too ("Are you willing to relocate?",
-    "Which of these languages have you used?"), including Google Forms. The AI must pick from the real
-    options, and anything that isn't one of them is thrown away instead of guessed.
+    "Which of these languages have you used?"), including Google Forms and custom dropdowns such as
+    **Workday's** pop-up lists and **React Select** (Greenhouse's newer boards). SmartFill opens each menu
+    to read its options, and the AI must pick from them: anything that isn't a real option is thrown away
+    instead of guessed. Dropdowns that only show options as you type (like a school search) are left for you.
   - It **never** answers equal-opportunity questions (gender, race, veteran or disability status and the
     like) or ticks consent and "I agree" boxes; those are always left to you.
   - Name, email and phone are still filled by the on-device autofill, never by the AI.
@@ -162,7 +164,7 @@ npm install
 | `npm run build:extension` | Compiles the content scripts, popup, tracker and background worker into the checked-in `.js` files under `extension/`, and copies pdf.js into `extension/vendor/`. |
 | `npm run package:extension` | Builds the extension and rebuilds `public/SmartFill.zip`, the file the landing page serves. |
 | `npm test` | Runs the unit tests (Vitest + jsdom). |
-| `npm run test:e2e` | Loads the unpacked extension into Microsoft Edge and checks learning, autofill, iframes, the popup, "Fill this page", the tracker, the match score, CV upload and AI drafting end to end. AI calls are stubbed, so no key is needed. |
+| `npm run test:e2e` | Loads the unpacked extension into Microsoft Edge and checks learning, autofill, iframes, the popup, "Fill this page", the tracker, the match score, CV upload and AI drafting — including real react-select dropdowns — end to end. AI calls are stubbed, so no key is needed. |
 | `npm run screenshots` | Regenerates the images in `docs/screenshots/` from the real extension, using a made-up profile. |
 
 `test:e2e` and `screenshots` use Edge by default. Set `SMARTFILL_BROWSER=chromium` to use Playwright's
@@ -203,7 +205,7 @@ docs/screenshots/     images used in this README
 - [x] AI-drafted answers to custom questions from your CV and the job description (Gemini or Groq)
 - [x] Optional AI match analysis
 - [x] AI answers for dropdown and multiple-choice questions
-- [ ] AI answers for custom (non-native) dropdowns such as Workday's and React Select
+- [x] AI answers for custom dropdowns (Workday, React Select and other accessible dropdowns)
 - [ ] Multiple profiles
 - [ ] Import / export profiles
 - [ ] Cloud sync

@@ -1,6 +1,6 @@
 // SmartFill content script - AI-drafted answers to custom questions.
-// Finds unanswered questions — free text, dropdowns, radio groups and
-// checkbox groups — asks the background worker to answer them from the user's
+// Finds unanswered questions — free text, dropdowns (native, React Select,
+// Workday and other ARIA comboboxes), radio groups and checkbox groups — asks the background worker to answer them from the user's
 // CV and the job description, and fills them in outlined amber for review.
 // Never submits, never ticks consent boxes, never answers demographic
 // (equal-opportunity) questions.
@@ -27,7 +27,10 @@
     markEl: HTMLElement;
     textEl?: HTMLElement;
     answered: () => boolean;
-    apply: (a: Answer) => boolean;
+    // Custom dropdowns only show their options once opened: read them just
+    // before asking. Returns a note when the question has to be skipped.
+    prepare?: () => Promise<string | null>;
+    apply: (a: Answer) => boolean | Promise<boolean>;
   }
 
   const clean = (s: string | null | undefined) => String(s || "").replace(/\s+/g, " ").trim();
@@ -222,8 +225,200 @@
     return out;
   }
 
+  // ─── Custom dropdowns: React Select, Workday, other ARIA comboboxes ─────────
+
+  const TRIGGER_SEL = 'input[role="combobox"], [role="combobox"]:not(input):not(select), [aria-haspopup="listbox"]:not(input):not(select)';
+  const EMPTY_DISPLAY = /^(select|choose|pick|search|type to search|start typing|please select|please choose|select one|-{2,}|—)/i;
+  const NOT_A_QUESTION = /\b(search|filter|sort|language|locale|currency|results per page)\b/i;
+  const OPTION_NOISE = /^(no options|no results|loading|searching|type to search|start typing)/i;
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function until<T>(get: () => T | null | undefined | false, ms = 1500): Promise<T | null> {
+    const end = Date.now() + ms;
+    for (;;) {
+      const v = get();
+      if (v) return v;
+      if (Date.now() > end) return null;
+      await wait(50);
+    }
+  }
+
+  function key(el: HTMLElement, k: string, code: number) {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: k, keyCode: code, which: code, bubbles: true, cancelable: true }));
+  }
+
+  function press(el: HTMLElement) {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+      const Ctor = type.startsWith("pointer") && typeof PointerEvent !== "undefined" ? PointerEvent : MouseEvent;
+      el.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true, button: 0 }));
+    }
+    el.click();
+  }
+
+  // The visible box around the trigger (React Select's "control").
+  function controlOf(el: HTMLElement): HTMLElement {
+    if (!(el instanceof HTMLInputElement)) return el;
+    return (el.closest('[class*="control"]') as HTMLElement) || (el.closest('[class*="container"]') as HTMLElement) || el.parentElement || el;
+  }
+
+  function displayText(el: HTMLElement): string {
+    const box = controlOf(el);
+    let text = "";
+    const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const parent = (n as Text).parentElement;
+      if (parent?.closest('[class*="placeholder"], [class*="a11y"], [aria-live], [role="listbox"]')) continue;
+      text += ` ${n.textContent}`;
+    }
+    return clean(text);
+  }
+
+  const customAnswered = (el: HTMLElement) => {
+    const t = displayText(el);
+    return Boolean(t) && !EMPTY_DISPLAY.test(t);
+  };
+
+  function customLabel(el: HTMLElement): string {
+    const self = new Set([el.id, el.getAttribute("aria-describedby")].filter(Boolean));
+    const byIds = (attr: string) => (el.getAttribute(attr) || "").split(/\s+/)
+      .filter((id) => id && !self.has(id))
+      .map((id) => clean(document.getElementById(id)?.textContent)).join(" ");
+    // Workday appends the button text and "Required": "Are you…? Select One Required".
+    const strip = (t: string) => {
+      let out = clean(t);
+      for (let prev = ""; prev !== out;) {
+        prev = out;
+        out = out.replace(/\s*(select one|select\s*\.{0,3}|choose one|required|\*)\s*$/i, "").trim();
+      }
+      return stripLabel(out);
+    };
+    const candidates = [
+      byIds("aria-labelledby"),
+      clean(el.getAttribute("aria-label")),
+      el.id ? clean(document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.textContent) : "",
+    ];
+    for (const c of candidates) {
+      const t = strip(c);
+      if (t.length >= 3 && !EMPTY_DISPLAY.test(t)) return t;
+    }
+    const box = (controlOf(el).closest('[class*="container"]') as HTMLElement) || controlOf(el);
+    return strip(groupLabel(box.parentElement || box, box));
+  }
+
+  function listboxFor(el: HTMLElement, before: Set<Element>): HTMLElement | null {
+    for (const attr of ["aria-controls", "aria-owns"]) {
+      const id = el.getAttribute(attr);
+      const node = id ? document.getElementById(id) : null;
+      if (node && shown(node)) return node;
+    }
+    const box = (controlOf(el).closest('[class*="container"]') as HTMLElement) || controlOf(el).parentElement;
+    const inside = box?.querySelector('[role="listbox"], [class*="menu"]') as HTMLElement | null;
+    if (inside && shown(inside)) return inside;
+    const fresh = Array.from(document.querySelectorAll('[role="listbox"]')).filter((l) => !before.has(l) && shown(l));
+    return (fresh[fresh.length - 1] as HTMLElement) || null;
+  }
+
+  function optionEls(list: HTMLElement): HTMLElement[] {
+    let els = Array.from(list.querySelectorAll('[role="option"]')) as HTMLElement[];
+    if (!els.length) {
+      els = (Array.from(list.querySelectorAll('[class*="option"]')) as HTMLElement[])
+        .filter((o) => !o.querySelector('[class*="option"]'));
+    }
+    return els.filter((o) => o.getAttribute("aria-disabled") !== "true");
+  }
+
+  const optionText = (o: HTMLElement) =>
+    clean(o.getAttribute("data-automation-label")) || clean(o.getAttribute("aria-label")) || clean(o.textContent);
+
+  async function openMenu(el: HTMLElement): Promise<HTMLElement | null> {
+    const before = new Set(Array.from(document.querySelectorAll('[role="listbox"]')));
+    if (el instanceof HTMLInputElement) {
+      el.focus();
+      key(el, "ArrowDown", 40);
+    } else {
+      press(el);
+    }
+    let list = await until(() => listboxFor(el, before), 1200);
+    if (!list) {
+      // Some widgets only open on a mouse press on their box.
+      controlOf(el).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+      list = await until(() => listboxFor(el, before), 800);
+    }
+    // Options can render a moment after the list itself.
+    if (list) await until(() => optionEls(list!).length > 0, 600);
+    return list;
+  }
+
+  async function closeMenu(el: HTMLElement, list: HTMLElement | null) {
+    if (!list || !list.isConnected || !shown(list)) return;
+    key(el, "Escape", 27);
+    if (list.isConnected && shown(list)) key(list, "Escape", 27);
+    await wait(60);
+    if (!(el instanceof HTMLInputElement) && list.isConnected && shown(list)) press(el);
+    if (el instanceof HTMLInputElement) el.blur();
+  }
+
+  // One menu at a time, whoever asks.
+  let queue: Promise<unknown> = Promise.resolve();
+  function serial<T>(job: () => Promise<T>): Promise<T> {
+    const next = queue.then(job, job);
+    queue = next.catch(() => {});
+    return next;
+  }
+
+  function customTargets(): Target[] {
+    const out: Target[] = [];
+    const seen = new Set<HTMLElement>();
+    for (const el of Array.from(document.querySelectorAll(TRIGGER_SEL)) as HTMLElement[]) {
+      // Innermost trigger only (a combobox wrapper around a combobox input).
+      if (el.querySelector(TRIGGER_SEL) || seen.has(el)) continue;
+      if ((el as HTMLInputElement).disabled || el.getAttribute("aria-disabled") === "true") continue;
+      if (el.closest('[role="search"], search, nav, header')) continue;
+      const box = controlOf(el);
+      if (!shown(box) || customAnswered(el)) continue;
+      const label = customLabel(el);
+      if (skipLabel(label) || NOT_A_QUESTION.test(label)) continue;
+      seen.add(el);
+      const q: Omit<Question, "id"> = { label, kind: "single", options: [] };
+      out.push({
+        q,
+        markEl: box,
+        answered: () => customAnswered(el),
+        prepare: () => serial(async () => {
+          const list = await openMenu(el);
+          if (!list) return "Couldn't open this dropdown.";
+          const options = optionEls(list).map(optionText).filter((t) => t && !OPTION_NOISE.test(t));
+          if (list.getAttribute("aria-multiselectable") === "true") q.kind = "multi";
+          await closeMenu(el, list);
+          if (!options.length) return "This dropdown only shows options as you type, so it was left for you.";
+          if (options.length > MAX_OPTIONS) return "This dropdown has too many options to choose from.";
+          q.options = Array.from(new Set(options));
+          return null;
+        }),
+        apply: (a) => serial(async () => {
+          let picked = 0;
+          for (const choice of a.choices) {
+            const list = await openMenu(el);
+            if (!list) break;
+            const option = optionEls(list).find((o) => norm(optionText(o)) === norm(choice));
+            if (!option) { await closeMenu(el, list); continue; }
+            option.scrollIntoView?.({ block: "nearest" });
+            press(option);
+            if (await until(() => customAnswered(el), 800)) picked++;
+            await closeMenu(el, list);
+            if (q.kind !== "multi") break;
+          }
+          if (el instanceof HTMLInputElement) el.blur();
+          return picked > 0;
+        }),
+      });
+    }
+    return out;
+  }
+
   function allTargets(): Target[] {
-    return [...textTargets(), ...selectTargets(), ...groupTargets()];
+    return [...textTargets(), ...selectTargets(), ...groupTargets(), ...customTargets()];
   }
 
   // ─── Asking and applying ──────────────────────────────────────────────────────
@@ -250,14 +445,21 @@
     });
   }
 
-  async function draft(targets: Target[], jobText?: string): Promise<SmartFillDraftResult> {
-    const result: SmartFillDraftResult = { total: targets.length, drafted: 0, skipped: [] };
+  async function draft(all: Target[], jobText?: string): Promise<SmartFillDraftResult> {
+    const result: SmartFillDraftResult = { total: all.length, drafted: 0, skipped: [] };
+    if (!all.length) return result;
+    const targets: Target[] = [];
+    for (const t of all) {
+      const problem = t.prepare ? await t.prepare() : null;
+      if (problem) result.skipped.push({ label: t.q.label, note: problem });
+      else targets.push(t);
+    }
     if (!targets.length) return result;
     const questions: Question[] = targets.map((t, i) => ({ id: `q${i + 1}`, ...t.q }));
     const res = await ask({ task: "answers", job: await jobContext(jobText), questions });
     if (!res.ok) return { ...result, error: String(res.error || "AI request failed."), code: String(res.code || "") };
     const answers = (res.answers || []) as Answer[];
-    targets.forEach((t, i) => {
+    for (const [i, t] of targets.entries()) {
       const a = answers.find((x) => x.id === questions[i].id);
       const hasAnswer = Boolean(a && (a.answer || a.choices?.length));
       // Leave it alone if the user answered it while we waited.
@@ -266,16 +468,16 @@
           label: t.q.label,
           note: a?.note || (hasAnswer ? "You'd already answered it." : "Not enough in your CV to answer this."),
         });
-        return;
+        continue;
       }
-      if (t.apply({ ...a, choices: a.choices || [] })) {
+      if (await t.apply({ ...a, choices: a.choices || [] })) {
         t.markEl.dataset.smartfillAi = "1";
         sf.fields?.mark(t.markEl, "review", AI_TITLE);
         result.drafted++;
       } else {
         result.skipped.push({ label: t.q.label, note: "Couldn't apply the AI's answer to this field." });
       }
-    });
+    }
     return result;
   }
 

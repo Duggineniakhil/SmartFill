@@ -226,6 +226,144 @@ describe("AI drafting: dropdowns and multiple choice", () => {
   });
 });
 
+describe("AI drafting: custom dropdowns (Workday, React Select)", () => {
+  let asked: Array<{ label: string; options?: string[] }>;
+
+  // Workday-style: a button that opens a listbox appended to <body>.
+  function workday(id: string, label: string) {
+    const btn = document.getElementById(id) as HTMLButtonElement;
+    btn.addEventListener("click", () => {
+      const open = document.querySelector(`[data-for="${id}"]`);
+      if (open) { open.remove(); return; }
+      const list = document.createElement("ul");
+      list.setAttribute("role", "listbox");
+      list.dataset.for = id;
+      for (const text of ["Yes", "No"]) {
+        const li = document.createElement("li");
+        li.setAttribute("role", "option");
+        li.innerHTML = `<div data-automation-label="${text}">${text}</div>`;
+        li.addEventListener("click", () => { btn.textContent = text; list.remove(); });
+        list.append(li);
+      }
+      document.body.append(list);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") document.querySelector(`[data-for="${id}"]`)?.remove();
+    });
+    void label;
+  }
+
+  // React Select-style: an input[role=combobox] that opens on ArrowDown.
+  function reactSelect(id: string, options: string[]) {
+    const input = document.getElementById(id) as HTMLInputElement;
+    const box = input.closest(".rs-container") as HTMLElement;
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { box.querySelector('[role="listbox"]')?.remove(); return; }
+      if (e.key !== "ArrowDown" || box.querySelector('[role="listbox"]')) return;
+      const menu = document.createElement("div");
+      menu.className = "select__menu";
+      menu.setAttribute("role", "listbox");
+      menu.id = `${id}-listbox`;
+      input.setAttribute("aria-controls", menu.id);
+      if (!options.length) menu.innerHTML = `<div class="select__menu-notice">No options</div>`;
+      for (const text of options) {
+        const o = document.createElement("div");
+        o.setAttribute("role", "option");
+        o.className = "select__option";
+        o.textContent = text;
+        o.addEventListener("click", () => {
+          box.querySelector(".select__placeholder")!.outerHTML = `<div class="select__single-value">${text}</div>`;
+          menu.remove();
+        });
+        menu.append(o);
+      }
+      box.append(menu);
+    });
+  }
+
+  beforeEach(() => {
+    asked = [];
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 300, height: 40, top: 0, right: 300, bottom: 40, left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+    document.body.innerHTML = `
+      <header><button aria-haspopup="listbox" aria-label="Language">English</button></header>
+      <form>
+        <div><label for="auth">Are you legally authorized to work in Germany?</label>
+          <button id="auth" type="button" aria-haspopup="listbox" aria-label="Are you legally authorized to work in Germany? Select One Required">Select One</button></div>
+        <div><label for="wdgender">Please select your gender</label>
+          <button id="wdgender" type="button" aria-haspopup="listbox">Select One</button></div>
+        <label id="lvl-label">What is your experience level?</label>
+        <div class="rs-container"><div class="select__control">
+          <div class="select__placeholder">Select...</div>
+          <input id="lvl" role="combobox" aria-haspopup="true" aria-expanded="false" aria-labelledby="lvl-label">
+        </div></div>
+        <label id="school-label">Which school did you attend?</label>
+        <div class="rs-container"><div class="select__control">
+          <div class="select__placeholder">Start typing...</div>
+          <input id="school" role="combobox" aria-haspopup="true" aria-labelledby="school-label">
+        </div></div>
+      </form>`;
+    workday("auth", "auth");
+    reactSelect("lvl", ["Junior", "Mid-level", "Senior"]);
+    reactSelect("school", []);
+    Object.assign(window, {
+      __SMARTFILL__: undefined,
+      ResizeObserver: class { observe() {} disconnect() {} },
+      chrome: {
+        storage: {
+          local: {
+            get: (_k: unknown, cb: (d: unknown) => void) => cb({ smartfill_profile: { fields: {} }, smartfill_resume: { text: CV } }),
+            set: vi.fn(),
+          },
+          onChanged: { addListener: () => {} },
+        },
+        runtime: {
+          onMessage: { addListener: () => {} },
+          sendMessage: (msg: { questions: Array<{ id: string; label: string; options?: string[] }> }, cb: (r: unknown) => void) => {
+            asked.push(...msg.questions);
+            cb({ ok: true, answers: msg.questions.map((q) => ({
+              id: q.id, answer: "", note: "",
+              choices: /authorized/.test(q.label) ? ["Yes"] : /experience level/.test(q.label) ? ["Mid-level"] : [],
+            })) });
+          },
+        },
+      },
+    });
+    for (const f of ["detectFields", "autofill", "matchScore", "tracker", "aiDraft"]) {
+      window.eval(readFileSync(resolve(`extension/content/${f}.js`), "utf8"));
+    }
+  });
+  afterEach(() => { vi.restoreAllMocks(); document.body.innerHTML = ""; });
+
+  it("finds custom dropdowns without opening them, and skips demographics and page controls", () => {
+    expect(window.__SMARTFILL__.ai!.questions().map((q) => q.label)).toEqual([
+      "Are you legally authorized to work in Germany?",
+      "What is your experience level?",
+      "Which school did you attend?",
+    ]);
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it("reads each menu's options, picks the AI's answer and closes the menu", async () => {
+    const out = await window.__SMARTFILL__.ai!.draftAll("Job text");
+    expect(asked.map((q) => [q.label, q.options])).toEqual([
+      ["Are you legally authorized to work in Germany?", ["Yes", "No"]],
+      ["What is your experience level?", ["Junior", "Mid-level", "Senior"]],
+    ]);
+    expect(document.getElementById("auth")!.textContent).toBe("Yes");
+    expect(document.querySelector(".select__single-value")!.textContent).toBe("Mid-level");
+    expect(document.getElementById("auth")!.dataset.smartfillStatus).toBe("review");
+    expect((document.querySelector(".select__control") as HTMLElement).dataset.smartfillStatus).toBe("review");
+    expect(document.querySelector('[role="listbox"]')).toBeNull();
+    expect(document.getElementById("wdgender")!.textContent).toBe("Select One");
+    expect(out).toEqual({
+      total: 3, drafted: 2,
+      skipped: [{ label: "Which school did you attend?", note: "This dropdown only shows options as you type, so it was left for you." }],
+    });
+  });
+});
+
 describe("AI drafting on a form", () => {
   let sent: Array<Record<string, unknown>>;
   let reply: Record<string, unknown>;
