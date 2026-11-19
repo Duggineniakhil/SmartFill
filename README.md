@@ -26,7 +26,7 @@
   <img src="docs/screenshots/tracker-board.png" alt="SmartFill application tracker: a board of applications from Interested to Offer, each with a match score" width="900" />
 </p>
 
-**Works on:** Greenhouse · Lever · Workday · Ashby · LinkedIn · SmartRecruiters · Wellfound · Google Forms ·
+**Works on:** Greenhouse · Lever · Workday · Ashby · LinkedIn · SmartRecruiters · iCIMS · Wellfound · Google Forms ·
 company careers pages
 
 ## How it works

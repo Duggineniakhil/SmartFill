@@ -65,6 +65,28 @@ describe("tracker: reading the job", () => {
     expect(job).toMatchObject({ title: "Backend Engineer", company: "Acme Robotics", location: "Berlin, DE", platform: "Company site" });
   });
 
+  it("drops placeholder address parts and reads iCIMS's real location", () => {
+    const ld = `<script type="application/ld+json">${JSON.stringify({
+      "@type": "JobPosting", title: "Software Development Intern", hiringOrganization: { name: "Shure" },
+      jobLocation: [{ "@type": "Place", address: { addressLocality: "UNAVAILABLE", addressRegion: "UNAVAILABLE", addressCountry: "IN" } }],
+    })}</script>`;
+    expect(t.extractJob(page(ld), "https://careers.acme.com/jobs/9").location).toBe("IN");
+
+    const header = `<div class="iCIMS_JobHeaderTag"><dt class="iCIMS_JobHeaderField">Category</dt><dd>Engineering</dd></div>
+      <div class="iCIMS_JobHeaderTag"><dt class="iCIMS_JobHeaderField"><span class="sr-only">Job Locations</span></dt>
+      <dd class="iCIMS_JobHeaderData"><span> IN-Telangana-Hyderabad</span></dd></div>`;
+    const url = "https://careers-shure.icims.com/jobs/5037/software-development-intern/job?in_iframe=1";
+    expect(t.extractJob(page(ld + header), url)).toMatchObject({
+      title: "Software Development Intern", company: "Shure", location: "Hyderabad, Telangana, IN", platform: "iCIMS",
+    });
+    const sd = `<script>var icimsSD = {"companyName":"Shure Incorporated","job":{"jid":5037,"jobUrls":[{"name":"External","url":"x"}],"location":"Hyderabad, Telangana, India"}};</script>`;
+    expect(t.extractJob(page(ld + header + sd), url).location).toBe("Hyderabad, Telangana, India");
+
+    // The posting, the login step and the application form are one job.
+    expect(t.jobKey("https://careers-shure.icims.com/jobs/5037/software-development-intern/login"))
+      .toBe(t.jobKey(url));
+  });
+
   it("reads Lever pages from the layout and the URL", () => {
     const doc = page(`<div class="posting-headline"><h2>Data Analyst</h2></div><div class="posting-categories"><div class="location">Remote</div></div>`);
     const job = t.extractJob(doc, "https://jobs.lever.co/north-star/0b2d6f4c-1d2e-4f3a-9b8c-7d6e5f4a3b2c/apply");

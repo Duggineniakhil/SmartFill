@@ -7,7 +7,7 @@ import boardShot from "../../../docs/screenshots/tracker-board.png?url";
 import cvShot from "../../../docs/screenshots/cv-panel.png?url";
 import aiShot from "../../../docs/screenshots/ai-settings.png?url";
 
-const PLATFORMS = ["Greenhouse", "Lever", "Workday", "Ashby", "LinkedIn", "SmartRecruiters", "Wellfound", "Google Forms", "Company careers pages"];
+const PLATFORMS = ["Greenhouse", "Lever", "Workday", "Ashby", "LinkedIn", "SmartRecruiters", "iCIMS", "Wellfound", "Google Forms", "Company careers pages"];
 
 const STEPS = [
   { n: "01", t: "Teach it once", d: "Fill one application by hand and upload your CV (PDF, Word or text). SmartFill learns your details on your device." },

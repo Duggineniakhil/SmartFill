@@ -24,6 +24,7 @@
     { id: "ashby", name: "Ashby", test: (u) => /(^|\.)ashbyhq\.com$/.test(u.hostname) },
     { id: "linkedin", name: "LinkedIn", test: (u) => /(^|\.)linkedin\.com$/.test(u.hostname) && u.pathname.startsWith("/jobs") },
     { id: "smartrecruiters", name: "SmartRecruiters", test: (u) => /(^|\.)smartrecruiters\.com$/.test(u.hostname) },
+    { id: "icims", name: "iCIMS", test: (u) => /(^|\.)icims\.com$/.test(u.hostname) },
     { id: "wellfound", name: "Wellfound", test: (u) => /(^|\.)wellfound\.com$/.test(u.hostname) && u.pathname.includes("/jobs") },
     { id: "google_forms", name: "Google Forms", test: (u) => u.hostname === "docs.google.com" && u.pathname.startsWith("/forms") },
   ];
@@ -40,6 +41,12 @@
 
   function clean(s: string | null | undefined, max = 140): string {
     return String(s || "").replace(/\s+/g, " ").trim().slice(0, max);
+  }
+
+  // Job boards fill unknown address parts with words like "UNAVAILABLE".
+  const PLACEHOLDER = /^(unavailable|not available|n\/?a|null|undefined|none|not specified|unknown|tbd|-+|\.+)$/i;
+  function joinPlace(parts: unknown[]): string {
+    return parts.map((x) => clean(String(x ?? ""))).filter((x) => x && !PLACEHOLDER.test(x)).join(", ");
   }
 
   function titleCase(slug: string): string {
@@ -64,6 +71,7 @@
       const id = (u.pathname.match(/\/jobs\/view\/(?:[^/]*-)?(\d+)/) || [])[1] || u.searchParams.get("currentJobId");
       if (id) return `linkedin:${id}`;
     }
+    if (p === "icims" && (m = u.pathname.match(/^\/jobs\/(\d+)/))) return `icims:${host}:${m[1]}`;
     if (p === "google_forms" && (m = u.pathname.match(/\/forms\/(?:u\/\d+\/)?d\/(?:e\/)?([^/]+)/))) return `gforms:${m[1]}`;
     // Generic: drop the query, the hash and a trailing apply step.
     const path = u.pathname
@@ -103,10 +111,9 @@
           const place = locs.map((l) => {
             const addr = (l as Record<string, unknown>)?.address as Record<string, unknown> | string | undefined;
             if (!addr) return "";
-            if (typeof addr === "string") return addr;
-            return [addr.addressLocality, addr.addressRegion, addr.addressCountry]
-              .map((x) => (typeof x === "object" && x ? (x as Record<string, unknown>).name : x))
-              .filter(Boolean).join(", ");
+            if (typeof addr === "string") return joinPlace([addr]);
+            return joinPlace([addr.addressLocality, addr.addressRegion, addr.addressCountry]
+              .map((x) => (typeof x === "object" && x ? (x as Record<string, unknown>).name : x)));
           }).filter(Boolean)[0];
           const remote = obj.jobLocationType === "TELECOMMUTE" ? "Remote" : "";
           return {
@@ -126,6 +133,29 @@
       const el = doc.querySelector(sel);
       const t = clean(el?.textContent);
       if (t) return t;
+    }
+    return "";
+  }
+
+  // iCIMS keeps the real location in its page data ("Hyderabad, Telangana,
+  // India") and in a header tag ("IN-Telangana-Hyderabad").
+  function icimsLocation(doc: Document): string {
+    for (const script of Array.from(doc.querySelectorAll("script:not([src])"))) {
+      const m = (script.textContent || "").match(/icimsSD\s*=\s*(\{.*\})\s*;?\s*$/m);
+      if (!m) continue;
+      try {
+        const loc = JSON.parse(m[1])?.job?.location;
+        const place = typeof loc === "string" ? joinPlace(loc.split(/\s*,\s*/)) : "";
+        if (place) return place;
+      } catch { /* not plain JSON */ }
+    }
+    for (const tag of Array.from(doc.querySelectorAll(".iCIMS_JobHeaderTag"))) {
+      if (!/location/i.test(tag.querySelector("dt")?.textContent || "")) continue;
+      const raw = clean(tag.querySelector("dd")?.textContent);
+      const parts = raw.split(/\s*\|\s*/)[0].split("-").map((x) => x.trim());
+      // "IN-Telangana-Hyderabad" → "Hyderabad, Telangana, IN"
+      const place = /^[A-Z]{2}$/.test(parts[0] || "") && parts.length > 1 ? joinPlace(parts.reverse()) : joinPlace([raw]);
+      if (place) return place;
     }
     return "";
   }
@@ -181,6 +211,10 @@
       case "smartrecruiters":
         title ||= text(doc, ["h1.job-title", "h1"]);
         company ||= titleCase(seg[0] || "");
+        break;
+      case "icims":
+        title ||= text(doc, [".iCIMS_Header h1", "h1.iCIMS_Header", "h1"]);
+        location = icimsLocation(doc) || location;
         break;
       case "google_forms":
         title ||= text(doc, ['[role="heading"][aria-level="1"]', '[role="heading"]']) || clean(doc.title);
