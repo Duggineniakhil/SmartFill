@@ -315,16 +315,8 @@ export default function AutoFlowLanding() {
             </li>
           ))}
         </ol>
-        <div className="mt-12 flex flex-wrap items-center gap-4">
+        <div className="mt-12">
           <DownloadButton />
-          <a
-            href="https://github.com/Duggineniakhil/SmartFill"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm uppercase tracking-[0.12em] text-zinc-300 border border-zinc-700 hover:border-cyan-400 hover:text-cyan-400 px-5 py-3 transition"
-          >
-            Source on GitHub
-          </a>
         </div>
       </section>
 
