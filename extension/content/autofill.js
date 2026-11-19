@@ -266,10 +266,13 @@
         btn.className = BADGE_CLASS;
         btn.textContent = "SF";
         btn.title = `SmartFill: fill "${value}"`;
+        // "all:initial" first, so the page's own button styles (padding, margins,
+        // fonts) can't reshape the badge.
         btn.style.cssText = `
-      pointer-events:auto;background:#22d3ee;color:#000;border:none;border-radius:6px;
-      width:22px;height:22px;font-size:13px;font-weight:700;cursor:pointer;
-      box-shadow:0 2px 8px rgba(34,211,238,.5);font-family:system-ui;line-height:1;
+      all:initial;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;
+      margin:0;padding:0;pointer-events:auto;background:#22d3ee;color:#000;border:none;border-radius:6px;
+      width:22px;height:22px;font:700 11px/1 system-ui,sans-serif;letter-spacing:0;cursor:pointer;
+      box-shadow:0 2px 8px rgba(34,211,238,.5);
     `;
         btn.addEventListener("click", (ev) => {
             ev.preventDefault();

@@ -80,14 +80,24 @@ Nice to have
 
 const FORM = `<!doctype html><html><head><title>Backend Engineer — Acme Robotics</title>
 <style>
-  body { font: 15px/1.5 system-ui, sans-serif; background: #f6f7f9; color: #111; margin: 0; padding: 28px; }
-  .card { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px 28px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-  h1 { font-size: 20px; margin: 0 0 2px; } .sub { color: #666; margin: 0 0 18px; font-size: 13px; }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
-  input, textarea { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #ccd; border-radius: 6px; font: inherit; }
-  textarea { min-height: 64px; }
-  button { margin-top: 18px; background: #111; color: #fff; border: 0; padding: 10px 18px; border-radius: 6px; font-weight: 600; }
+  /* Dark, like the SmartFill website. */
+  html { scrollbar-width: none; } ::-webkit-scrollbar { display: none; }
+  body { font: 15px/1.5 system-ui, sans-serif; background: #0a0a0b; color: #e4e4e7; margin: 0; padding: 28px; }
+  .card { max-width: 560px; margin: 0 auto; background: #111114; border: 1px solid #27272a; padding: 26px 28px;
+    box-shadow: 0 30px 80px -30px rgba(34, 211, 238, .3); }
+  .bar { display: flex; gap: 6px; margin: -10px 0 18px; }
+  .bar i { width: 10px; height: 10px; border-radius: 50%; background: #3f3f46; }
+  .bar span { margin-left: 8px; font: 11px ui-monospace, monospace; color: #71717a; }
+  h1 { font-size: 21px; margin: 0 0 2px; color: #fafafa; } .sub { color: #71717a; margin: 0 0 14px; font-size: 13px; }
+  label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: #a1a1aa; margin: 16px 0 6px; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #27272a; background: #0a0a0b;
+    color: #e4e4e7; font: inherit; border-radius: 0; }
+  textarea { min-height: 70px; }
+  /* Styles every button on the page, as many real sites do: SmartFill's badges must not be affected. */
+  button { margin-top: 22px; background: #22d3ee; color: #000; border: 0; padding: 11px 20px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .08em; font-size: 13px; }
 </style></head><body><div class="card">
+  <div class="bar"><i></i><i></i><i></i><span>job-boards.greenhouse.io/acme/apply</span></div>
   <h1>Backend Engineer</h1><p class="sub">Acme Robotics · Berlin, DE · Apply</p>
   <form>
     <div><label for="name">Full name *</label><input id="name"></div>

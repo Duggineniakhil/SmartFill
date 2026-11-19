@@ -512,9 +512,12 @@
         btn.className = BUTTON_CLASS;
         btn.textContent = "✦ Draft";
         btn.title = "SmartFill: draft an answer from your CV with AI";
+        // "all:initial" first, so the page's own button styles can't reshape it.
         btn.style.cssText = `
+      all:initial;box-sizing:border-box;display:inline-flex;align-items:center;margin:0;
       position:absolute;z-index:2147483647;pointer-events:auto;background:#a78bfa;color:#000;border:none;
-      border-radius:6px;padding:3px 8px;font:600 12px/1.3 system-ui;cursor:pointer;box-shadow:0 2px 8px rgba(167,139,250,.5);
+      border-radius:6px;padding:3px 8px;font:600 12px/1.3 system-ui,sans-serif;white-space:nowrap;cursor:pointer;
+      box-shadow:0 2px 8px rgba(167,139,250,.5);
     `;
         document.body.appendChild(btn);
         const position = () => {
@@ -527,7 +530,7 @@
                 btn.style.display = "none";
                 return;
             }
-            btn.style.display = "block";
+            btn.style.display = "inline-flex";
             btn.style.top = `${window.scrollY + r.bottom - 28}px`;
             btn.style.left = `${window.scrollX + r.right - btn.offsetWidth - 6}px`;
         };
