@@ -86,11 +86,13 @@ you want to work here?" using your CV and the job description.
 - **Drafts are outlined amber** so you read and edit each one before submitting.
 - **No made-up facts.** If your CV doesn't cover a question (salary, visa, start date), the field stays empty
   and the popup tells you why.
+- **Gemini and Groq back each other up.** Add both keys and if your chosen provider is down, overloaded or
+  rate-limited, the same request goes to the other one. The popup notes when the backup answered.
 - Name, email and phone are filled by the on-device autofill, never by the AI.
 
 Set it up in the tracker under **✦ AI settings**: pick a provider, paste your key, optionally change the model
-(defaults: `gemini-3.8-flash` and `openai/gpt-oss-120b`), and click **Test connection**. Add both keys and the
-other provider takes over automatically whenever your chosen one fails or is overloaded.
+(defaults: `gemini-3.8-flash` and `openai/gpt-oss-120b`), and click **Test connection**. If you saved a model the
+provider has since retired, SmartFill switches to the current default instead of failing.
 
 <p align="center">
   <img src="docs/screenshots/ai-settings.png" alt="The AI settings panel with Google Gemini and Groq key and model fields and a Test connection button" width="900" />
@@ -98,7 +100,7 @@ other provider takes over automatically whenever your chosen one fails or is ove
 
 ### From Interested to Offer — application tracker
 
-Click Submit on Greenhouse, Lever, Workday, Ashby, LinkedIn or a company careers page and the application lands
+Click Submit on Greenhouse, Lever, Workday, Ashby, iCIMS, LinkedIn or a company careers page and the application lands
 on your board with the company, role, location and date. Save jobs for later with **Track this job** in the
 popup. Open the board with **Open tracker**.
 
@@ -109,6 +111,8 @@ popup. Open the board with **Open tracker**.
 - **Notes, search, filters, sort by best match, manual entries and CSV export.**
 - **No duplicates.** A job's description page, its apply page and an embedded form all count as one job.
   "Apply now", "Next" and "Continue" don't log anything — only the final Submit does.
+- **Clean details.** The location comes from the job board's real data — placeholders like "UNAVAILABLE" are
+  dropped.
 
 ### Upload your CV once
 
@@ -145,7 +149,8 @@ Everything except the optional AI works offline, on your device. Here's exactly 
 4. Click **Load unpacked** and pick the unzipped folder (or the `extension` folder of this repository). Pin
    SmartFill to your toolbar.
 5. Click **Open tracker** in the popup, then **Your CV**: upload or paste your CV.
-6. Optional: under **✦ AI settings**, add a Gemini or Groq key and click **Test connection**.
+6. Optional: under **✦ AI settings**, add a Gemini or Groq key (or both, so one backs up the other) and click
+   **Test connection**.
 7. Fill your next application by hand once — from then on, SmartFill takes it from there.
 
 ## Develop locally
@@ -207,6 +212,8 @@ docs/screenshots/     images used in this README and on the website
 - [x] Optional AI match analysis
 - [x] AI answers for dropdown and multiple-choice questions
 - [x] AI answers for custom dropdowns (Workday, React Select and other accessible dropdowns)
+- [x] Automatic fallback between Gemini and Groq
+- [x] iCIMS job pages
 - [ ] Multiple profiles
 - [ ] Import / export profiles
 - [ ] Cloud sync
