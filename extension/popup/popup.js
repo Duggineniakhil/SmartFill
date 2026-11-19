@@ -192,4 +192,126 @@ if (fillNowEl) {
         }
     });
 }
+// ─── Application tracker ──────────────────────────────────────────────────────
+const STATUS_LABELS = {
+    interested: "Interested", applied: "Applied", interview: "Interview",
+    offer: "Offer", rejected: "Rejected", withdrawn: "Withdrawn",
+};
+const shortDate = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
+function renderAppsCount(apps) {
+    const el = $("appsCount");
+    if (!el)
+        return;
+    const list = Object.values(apps || {});
+    // Same counting as the tracker page: anything past "Interested" was sent.
+    const applied = list.filter((a) => a.status !== "interested");
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const thisWeek = applied.filter((a) => Date.parse(a.appliedAt || a.createdAt) >= weekAgo).length;
+    const saved = list.length - applied.length;
+    if (list.length === 0) {
+        el.textContent = "No applications tracked yet";
+        return;
+    }
+    const parts = [`${applied.length} application${applied.length === 1 ? "" : "s"}`, `${thisWeek} this week`];
+    if (saved > 0)
+        parts.push(`${saved} saved`);
+    el.textContent = parts.join(" · ");
+}
+let jobFrameId = null;
+function renderJob(found) {
+    const card = $("job");
+    if (!card)
+        return;
+    if (!found) {
+        card.hidden = true;
+        return;
+    }
+    card.hidden = false;
+    const { job, application } = found;
+    $("jobTitle").textContent = application?.title || job.title;
+    $("jobTitle").title = application?.title || job.title;
+    const meta = [application?.company || job.company, application?.location || job.location, job.platform].filter(Boolean).join(" · ");
+    $("jobMeta").textContent = meta;
+    $("jobMeta").title = meta;
+    const chip = $("jobStatus");
+    const trackBtn = $("trackBtn");
+    if (application) {
+        chip.hidden = false;
+        chip.className = `chip ${application.status}`;
+        const when = application.status === "applied" ? application.appliedAt : application.updatedAt;
+        chip.textContent = `${STATUS_LABELS[application.status]} · ${shortDate(when)}`;
+        trackBtn.hidden = true;
+    }
+    else {
+        chip.hidden = true;
+        trackBtn.hidden = false;
+    }
+}
+async function loadJob() {
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id)
+            return;
+        const ask = () => chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            func: () => (window.__SMARTFILL__?.tracker ? window.__SMARTFILL__.tracker.jobInfo() : "missing"),
+        });
+        let results = await ask();
+        // Tabs opened before the extension was installed or updated have no
+        // tracker script yet.
+        const missing = results.filter((r) => r.result === "missing" || r.result === undefined).map((r) => r.frameId ?? 0);
+        if (missing.length > 0) {
+            await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: missing }, files: ["content/tracker.js"] });
+            results = await ask();
+        }
+        const hits = results
+            .filter((r) => r.result && r.result !== "missing")
+            .map((r) => ({ frameId: r.frameId ?? 0, found: r.result }));
+        // Prefer a job already tracked, then a known job platform (an embedded
+        // Greenhouse form inside a company careers page), then anything.
+        const pick = hits.find((h) => h.found.application)
+            || hits.find((h) => h.found.job.platform !== "Company site")
+            || hits[0];
+        jobFrameId = pick ? pick.frameId : null;
+        renderJob(pick ? pick.found : null);
+    }
+    catch {
+        renderJob(null);
+    }
+}
+const trackBtnEl = $("trackBtn");
+if (trackBtnEl) {
+    trackBtnEl.addEventListener("click", async () => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id || jobFrameId === null)
+            return;
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id, frameIds: [jobFrameId] },
+                func: (status) => window.__SMARTFILL__?.tracker?.track(status) ?? null,
+                args: ["interested"],
+            });
+        }
+        catch {
+            // The page navigated away; the next popup open will show the result.
+        }
+        await loadJob();
+    });
+}
+const openTrackerEl = $("openTracker");
+if (openTrackerEl) {
+    openTrackerEl.addEventListener("click", () => {
+        chrome.tabs.create({ url: chrome.runtime.getURL("tracker/tracker.html") });
+        window.close();
+    });
+}
+function loadApps() {
+    chrome.storage.local.get({ smartfill_applications: {} }, (d) => renderAppsCount(d.smartfill_applications || {}));
+}
+chrome.storage.onChanged?.addListener((changes, area) => {
+    if (area === "local" && changes.smartfill_applications)
+        loadApps();
+});
 load();
+loadApps();
+loadJob();

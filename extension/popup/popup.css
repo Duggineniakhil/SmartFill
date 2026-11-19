@@ -59,3 +59,32 @@ footer {
 .legend { display: flex; gap: 12px; font-size: 11px; opacity: .8; }
 .legend span { display: inline-flex; align-items: center; gap: 4px; }
 .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.job {
+  background: #111114; border: 1px solid #1f2937; border-radius: 4px;
+  padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;
+}
+.job[hidden], .chip[hidden], button[hidden] { display: none; }
+.job-head { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
+.job-text { min-width: 0; }
+.job-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-meta { color: #9ca3af; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip {
+  flex: none; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: #1f2937; color: #e5e7eb; white-space: nowrap;
+}
+.chip.interested { background: #1e293b; color: #93c5fd; }
+.chip.applied { background: #083344; color: #67e8f9; }
+.chip.interview { background: #3b2a05; color: #fcd34d; }
+.chip.offer { background: #052e16; color: #86efac; }
+.chip.rejected, .chip.withdrawn { background: #2a0f0f; color: #fca5a5; }
+.apps {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px; color: #9ca3af; font-size: 12px;
+}
+button.secondary {
+  background: transparent; color: #22d3ee; border: 1px solid #155e75;
+  padding: 7px 12px; border-radius: 3px; font-weight: 600; cursor: pointer;
+}
+button.secondary.small { padding: 4px 8px; font-size: 12px; }
+button.secondary:hover { background: #083344; }

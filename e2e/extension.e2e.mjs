@@ -55,7 +55,18 @@ const FRAME = `<!doctype html><html><body><form>
   <div><label for="e">Email</label><input id="e"></div>
   <div><label for="u">University</label><input id="u"></div>
 </form></body></html>`;
-const PAGES = { "/done": "<!doctype html><p>thanks</p>", "/split": SPLIT, "/gform": GFORM, "/host": HOST, "/frame": FRAME };
+// A company careers page with schema.org JobPosting data and a CV upload.
+const JOB = `<!doctype html><html><head><title>Backend Engineer - Acme Robotics</title>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"JobPosting","title":"Backend Engineer",
+"hiringOrganization":{"@type":"Organization","name":"Acme Robotics"},
+"jobLocation":{"@type":"Place","address":{"addressLocality":"Berlin","addressCountry":"DE"}}}</script></head><body>
+<h1>Backend Engineer</h1>
+<div><label for="jn">Full Name</label><input id="jn"></div>
+<div><label for="cv">Resume</label><input id="cv" type="file"></div>
+<button type="button" id="jnext">Next</button>
+<button type="button" id="jsubmit">Submit application</button>
+</body></html>`;
+const PAGES = { "/done": "<!doctype html><p>thanks</p>", "/split": SPLIT, "/gform": GFORM, "/host": HOST, "/frame": FRAME, "/careers/backend-engineer/apply": JOB };
 
 let failures = 0;
 const stable = (v) => JSON.stringify(v, (_k, x) =>
@@ -219,6 +230,42 @@ try {
   await popup.click("#clear");
   await popup.waitForTimeout(300);
   check("popup: clear all", (await storage()).smartfill_profile, { fields: {} });
+
+  // 8. Application tracker: detect the job, log it on submit, show it on the board.
+  await popup.check("#enabled");
+  await popup.waitForTimeout(300);
+  await page.bringToFront();
+  await page.goto(`${ORIGIN}/careers/backend-engineer/apply?utm_source=x`);
+  await page.waitForTimeout(800);
+  const jobInfo = await sw.evaluate(async (origin) => {
+    const [tab] = await chrome.tabs.query({ url: `${origin}/*` });
+    const [r] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => window.__SMARTFILL__?.tracker?.jobInfo() ?? null,
+    });
+    return r.result;
+  }, ORIGIN);
+  check("tracker: job detected", [jobInfo?.job?.title, jobInfo?.job?.company, jobInfo?.job?.location, jobInfo?.application],
+    ["Backend Engineer", "Acme Robotics", "Berlin, DE", null]);
+  await page.click("#jnext");
+  await page.waitForTimeout(300);
+  check("tracker: Next does not log", Object.keys((await storage()).smartfill_applications || {}).length, 0);
+  await page.click("#jsubmit");
+  await page.waitForTimeout(500);
+  const logged = Object.values((await storage()).smartfill_applications || {});
+  check("tracker: logged on submit", logged.map((a) => [a.company, a.title, a.status, a.url]),
+    [["Acme Robotics", "Backend Engineer", "applied", `${ORIGIN}/careers/backend-engineer`]]);
+
+  const board = await context.newPage();
+  await board.setViewportSize({ width: 1280, height: 720 });
+  await board.goto(`chrome-extension://${extId}/tracker/tracker.html`);
+  await board.waitForSelector('[data-column="applied"] .card');
+  check("tracker page: card in Applied", await board.textContent('[data-column="applied"] .card .company'), "Acme Robotics");
+  check("tracker page: total", await board.textContent("#statTotal"), "1");
+  await board.selectOption('[data-column="applied"] .card select', "interview");
+  await board.waitForSelector('[data-column="interview"] .card');
+  check("tracker page: moved to Interview", Object.values((await storage()).smartfill_applications).map((a) => a.status), ["interview"]);
+  if (process.env.SMARTFILL_SHOT) await board.screenshot({ path: process.env.SMARTFILL_SHOT });
 } finally {
   await context.close();
   rmSync(userDataDir, { recursive: true, force: true });

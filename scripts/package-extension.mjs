@@ -7,7 +7,7 @@ import { crc32, deflateRawSync } from "node:zlib";
 
 const ROOT = "extension";
 const OUT = "public/SmartFill.zip";
-const INCLUDE = [/^manifest\.json$/, /^background\/.*\.js$/, /^content\/.*\.js$/, /^popup\/.*\.(html|css|js)$/, /^icons\/.*\.png$/];
+const INCLUDE = [/^manifest\.json$/, /^background\/.*\.js$/, /^content\/.*\.js$/, /^popup\/.*\.(html|css|js)$/, /^tracker\/.*\.(html|css|js)$/, /^icons\/.*\.png$/];
 
 function walk(dir) {
   return readdirSync(dir).flatMap((name) => {

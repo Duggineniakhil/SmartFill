@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>SmartFill · Applications</title>
+    <link rel="stylesheet" href="tracker.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">⚡ SmartFill <span>Applications</span></div>
+      <div class="top-actions">
+        <button id="addToggle" class="secondary">+ Add application</button>
+        <button id="exportCsv" class="secondary">Export CSV</button>
+      </div>
+    </header>
+
+    <section class="stats" aria-label="Summary">
+      <div class="stat"><b id="statTotal">0</b><span>Applications</span></div>
+      <div class="stat"><b id="statWeek">0</b><span>Applied this week</span></div>
+      <div class="stat"><b id="statReply">–</b><span>Reply rate</span></div>
+      <div class="stat"><b id="statInterviews">0</b><span>Interviews</span></div>
+      <div class="stat"><b id="statOffers">0</b><span>Offers</span></div>
+      <div class="stat warn"><b id="statFollow">0</b><span>Need a follow-up</span></div>
+    </section>
+
+    <form id="addForm" class="add-form" hidden>
+      <input id="addCompany" placeholder="Company" required />
+      <input id="addTitle" placeholder="Role" required />
+      <input id="addUrl" placeholder="Job link (optional)" type="url" />
+      <select id="addStatus"></select>
+      <button type="submit" class="primary">Add</button>
+    </form>
+
+    <section class="toolbar">
+      <input id="search" type="search" placeholder="Search company, role, location or notes" />
+      <select id="platformFilter"><option value="">All platforms</option></select>
+      <label class="check"><input id="followOnly" type="checkbox" /> Needs follow-up only</label>
+    </section>
+
+    <main id="board" class="board"></main>
+
+    <p id="empty" class="empty" hidden>
+      Nothing tracked yet. Apply on Greenhouse, Lever, Workday, Ashby, LinkedIn or a company careers page
+      and SmartFill logs it when you click <b>Submit</b>. You can also save a job from the popup with
+      <b>Track this job</b>, or add one here.
+    </p>
+
+    <footer>Stored on this device only.</footer>
+    <script src="tracker.js"></script>
+  </body>
+</html>
