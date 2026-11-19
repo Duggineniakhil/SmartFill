@@ -46,8 +46,8 @@ describe("AI client", () => {
     expect(init.body).toContain("Alex Morgan");
 
     expect(out.answers).toEqual([
-      { id: "q1", answer: "I build reliable backends at .", note: "" },
-      { id: "q2", answer: "", note: "Salary isn't in your CV." },
+      { id: "q1", answer: "I build reliable backends at .", choices: [], note: "" },
+      { id: "q2", answer: "", choices: [], note: "Salary isn't in your CV." },
     ]);
   });
 
@@ -76,10 +76,153 @@ describe("AI client", () => {
       .rejects.toMatchObject({ code: "no_cv" });
   });
 
+  it("keeps only answers that are real options, and sends the options to the model", async () => {
+    const questions = [
+      { id: "q1", label: "Are you willing to relocate?", kind: "single", options: ["Yes", "No"] },
+      { id: "q2", label: "Which languages have you used?", kind: "multi", options: ["Python", "Go", "C++", "SQL"] },
+      { id: "q3", label: "How did you hear about us?", kind: "single", options: ["LinkedIn", "Referral", "Other"] },
+      { id: "q4", label: "Highest education", kind: "single", options: ["High school", "Bachelor's degree", "Master's degree"] },
+    ];
+    const fetchImpl = vi.fn(async () => json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ answers: [
+      { id: "q1", choice: "yes" },
+      { id: "q2", choices: ["python", "SQL", "Rust"] },
+      { id: "q3", choice: "A friend told me" },
+      { id: "q4", choice: "Bachelor" },
+    ] }) }] } }] }));
+    const out = await ai.run({ task: "answers", settings: { geminiKey: "k" }, cv: CV, questions }, fetchImpl as unknown as typeof fetch);
+    const sentBody = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1].body as string;
+    expect(sentBody).toContain('\\"options\\":[\\"Python\\",\\"Go\\",\\"C++\\",\\"SQL\\"]');
+    expect((out.answers as Array<{ choices: string[]; note: string }>).map((a) => a.choices)).toEqual([
+      ["Yes"], ["Python", "SQL"], [], ["Bachelor's degree"],
+    ]);
+    expect((out.answers as Array<{ note: string }>)[2].note).toMatch(/isn't one of the options/);
+  });
+
   it("tells the model never to invent facts and to leave unknowns empty", () => {
     const { system } = ai.answersPrompt(CV, {}, {}, QUESTIONS);
     expect(system).toMatch(/Never invent/);
     expect(system).toMatch(/return an empty answer/);
+  });
+});
+
+describe("AI drafting: dropdowns and multiple choice", () => {
+  let sent: Array<Record<string, unknown>>;
+  let answerFor: (q: { id: string; label: string; options?: string[] }) => Record<string, unknown>;
+
+  beforeEach(() => {
+    sent = [];
+    answerFor = (q) => {
+      if (/relocate/i.test(q.label)) return { choice: "Yes" };
+      if (/languages/i.test(q.label)) return { choices: ["Python", "SQL"] };
+      if (/hear about/i.test(q.label)) return { choice: "", note: "Not in your CV." };
+      if (/experience level/i.test(q.label)) return { choice: "Mid-level (3-5 years)" };
+      if (/remote/i.test(q.label)) return { choice: "Hybrid" };
+      if (/country/i.test(q.label)) return { choice: "India" };
+      return { choice: q.options?.[0] || "" };
+    };
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 300, height: 40, top: 0, right: 300, bottom: 40, left: 0, x: 0, y: 0, toJSON: () => ({}),
+    });
+    document.body.innerHTML = `
+      <form>
+        <div><label for="exp">What is your experience level?</label>
+          <select id="exp"><option value="">Select…</option><option value="j">Junior (0-2 years)</option>
+          <option value="m">Mid-level (3-5 years)</option><option value="s">Senior (6+ years)</option></select></div>
+        <div><label for="country">Country</label>
+          <select id="country"><option value="">Select…</option><option>India</option><option>Germany</option></select></div>
+        <div><label for="gender">Gender</label>
+          <select id="gender"><option value="">Select…</option><option>Female</option><option>Male</option></select></div>
+        <div><label for="race">Race / Ethnicity</label>
+          <select id="race"><option value="">Select…</option><option>Asian</option><option>Other</option></select></div>
+        <fieldset><legend>Are you willing to relocate?</legend>
+          <label><input type="radio" name="reloc" value="1"> Yes</label>
+          <label><input type="radio" name="reloc" value="0"> No</label></fieldset>
+        <div class="field"><label>Which languages have you used professionally?</label>
+          <label><input type="checkbox" name="langs[]" value="py"> Python</label>
+          <label><input type="checkbox" name="langs[]" value="go"> Go</label>
+          <label><input type="checkbox" name="langs[]" value="sql"> SQL</label></div>
+        <div class="field"><label>How did you hear about us?</label>
+          <label><input type="radio" name="src" value="li"> LinkedIn</label>
+          <label><input type="radio" name="src" value="ref"> Referral</label></div>
+        <div class="field"><label>Veteran status</label>
+          <label><input type="radio" name="vet" value="y"> I am a veteran</label>
+          <label><input type="radio" name="vet" value="n"> I am not a veteran</label></div>
+        <label><input type="checkbox" name="consent"> I agree to the privacy policy</label>
+        <div role="listitem"><div role="heading">Do you prefer remote work?</div>
+          <div role="radiogroup">
+            <div role="radio" aria-checked="false" data-value="Remote" aria-label="Remote"></div>
+            <div role="radio" aria-checked="false" data-value="Hybrid" aria-label="Hybrid"></div>
+          </div></div>
+      </form>`;
+    // Google Forms-style radios toggle aria-checked when clicked.
+    for (const r of Array.from(document.querySelectorAll('[role="radio"]'))) {
+      r.addEventListener("click", () => {
+        r.parentElement!.querySelectorAll('[role="radio"]').forEach((x) => x.setAttribute("aria-checked", "false"));
+        r.setAttribute("aria-checked", "true");
+      });
+    }
+    Object.assign(window, {
+      __SMARTFILL__: undefined,
+      ResizeObserver: class { observe() {} disconnect() {} },
+      chrome: {
+        storage: {
+          local: {
+            get: (_k: unknown, cb: (d: unknown) => void) => cb({ smartfill_profile: { fields: {} }, smartfill_resume: { text: CV } }),
+            set: vi.fn(),
+          },
+          onChanged: { addListener: () => {} },
+        },
+        runtime: {
+          onMessage: { addListener: () => {} },
+          sendMessage: (msg: { questions: Array<{ id: string; label: string; options?: string[] }> }, cb: (r: unknown) => void) => {
+            sent.push(msg as unknown as Record<string, unknown>);
+            cb({ ok: true, answers: msg.questions.map((q) => {
+              const a = answerFor(q);
+              const choices = a.choices || (a.choice ? [a.choice] : []);
+              return { id: q.id, answer: "", choices, note: a.note || "" };
+            }) });
+          },
+        },
+      },
+    });
+    for (const f of ["detectFields", "autofill", "matchScore", "tracker", "aiDraft"]) {
+      window.eval(readFileSync(resolve(`extension/content/${f}.js`), "utf8"));
+    }
+  });
+  afterEach(() => { vi.restoreAllMocks(); document.body.innerHTML = ""; });
+
+  it("asks about dropdowns and choice groups, but never demographics or consent", () => {
+    const qs = window.__SMARTFILL__.ai!.questions();
+    expect(qs.map((q) => [q.label, q.kind, q.options])).toEqual([
+      ["What is your experience level?", "single", ["Junior (0-2 years)", "Mid-level (3-5 years)", "Senior (6+ years)"]],
+      ["Country", "single", ["India", "Germany"]],
+      ["Are you willing to relocate?", "single", ["Yes", "No"]],
+      ["Which languages have you used professionally?", "multi", ["Python", "Go", "SQL"]],
+      ["How did you hear about us?", "single", ["LinkedIn", "Referral"]],
+      ["Do you prefer remote work?", "single", ["Remote", "Hybrid"]],
+    ]);
+  });
+
+  it("selects, ticks and clicks the AI's choices and outlines them for review", async () => {
+    const out = await window.__SMARTFILL__.ai!.draftAll("Job text");
+    expect((document.getElementById("exp") as HTMLSelectElement).value).toBe("m");
+    expect((document.querySelector('input[name="reloc"][value="1"]') as HTMLInputElement).checked).toBe(true);
+    expect(Array.from(document.querySelectorAll('input[name="langs[]"]:checked'), (i) => (i as HTMLInputElement).value)).toEqual(["py", "sql"]);
+    expect(document.querySelector('[data-value="Hybrid"]')!.getAttribute("aria-checked")).toBe("true");
+    expect(document.querySelector("fieldset")!.getAttribute("data-smartfill-status")).toBe("review");
+    expect((document.getElementById("exp") as HTMLElement).dataset.smartfillStatus).toBe("review");
+    // Left alone: no basis in the CV, demographics, consent.
+    expect(document.querySelectorAll('input[name="src"]:checked')).toHaveLength(0);
+    expect(document.querySelectorAll('input[name="vet"]:checked')).toHaveLength(0);
+    expect((document.querySelector('input[name="consent"]') as HTMLInputElement).checked).toBe(false);
+    expect((document.getElementById("gender") as HTMLSelectElement).value).toBe("");
+    expect((document.getElementById("country") as HTMLSelectElement).value).toBe("India");
+    expect(out).toEqual({ total: 6, drafted: 5, skipped: [{ label: "How did you hear about us?", note: "Not in your CV." }] });
+  });
+
+  it("doesn't touch a group the user already answered", () => {
+    (document.querySelector('input[name="reloc"][value="0"]') as HTMLInputElement).checked = true;
+    expect(window.__SMARTFILL__.ai!.questions().map((q) => q.label)).not.toContain("Are you willing to relocate?");
   });
 });
 

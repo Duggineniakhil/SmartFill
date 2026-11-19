@@ -66,6 +66,11 @@ const JOB = `<!doctype html><html><head><title>Backend Engineer - Acme Robotics<
 <div><label for="jn">Full Name</label><input id="jn"></div>
 <div><label for="cv">Resume</label><input id="cv" type="file"></div>
 <div><label for="jwhy">Why do you want to work at Acme Robotics?</label><textarea id="jwhy"></textarea></div>
+<div><label for="jlevel">What is your experience level?</label><select id="jlevel"><option value="">Select…</option>
+  <option value="j">Junior</option><option value="m">Mid-level</option></select></div>
+<fieldset><legend>Are you willing to relocate?</legend>
+  <label><input type="radio" name="reloc" value="y"> Yes</label><label><input type="radio" name="reloc" value="n"> No</label></fieldset>
+<label><input type="checkbox" id="jconsent"> I agree to the privacy policy</label>
 <button type="button" id="jnext">Next</button>
 <button type="button" id="jsubmit">Submit application</button>
 </body></html>`;
@@ -329,7 +334,9 @@ try {
       let reply;
       if (/QUESTIONS \(JSON\)/.test(prompt)) {
         const qs = JSON.parse(prompt.split("QUESTIONS (JSON):\n")[1]);
-        reply = { answers: qs.map((q) => ({ id: q.id, answer: `Drafted: ${q.question}`, note: "" })) };
+        reply = { answers: qs.map((q) => (q.type === "single"
+          ? { id: q.id, choice: q.options[q.options.length - 1], note: "" }
+          : { id: q.id, answer: `Drafted: ${q.question}`, note: "" })) };
       } else if (/connectivity check/.test(body.systemInstruction.parts[0].text)) {
         reply = { ok: true };
       } else {
@@ -354,6 +361,19 @@ try {
   check("ai: key sent as header, job text and CV included, email left out",
     [calls[0]?.key, calls[0]?.url.includes("test-key"), /payment APIs/.test(calls[0]?.body), /Backend developer/.test(calls[0]?.body), /ada@example\.com/.test(calls[0]?.body)],
     ["test-key", false, true, true, false]);
+
+  // The popup's "Draft answers": every remaining question on the page.
+  const drafted = await sw.evaluate(async (origin) => {
+    const [tab] = await chrome.tabs.query({ url: `${origin}/*` });
+    const [r] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => window.__SMARTFILL__?.ai?.draftAll() ?? null,
+    });
+    return r.result;
+  }, ORIGIN);
+  check("ai: dropdown and radio answered", [drafted?.drafted, await page.inputValue("#jlevel"),
+    await page.isChecked('input[name="reloc"][value="n"]'), await page.isChecked("#jconsent")], [2, "m", true, false]);
+  check("ai: radio group marked for review", await page.getAttribute("fieldset", "data-smartfill-status"), "review");
 
   await board.bringToFront();
   await board.reload();

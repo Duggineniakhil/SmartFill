@@ -193,7 +193,7 @@ declare global {
       };
       ai?: {
         draftAll: (jobText?: string) => Promise<SmartFillDraftResult>;
-        questions: () => Array<{ id: string; label: string; kind: "short" | "long"; maxLength?: number }>;
+        questions: () => Array<{ id: string; label: string; kind: "short" | "long" | "single" | "multi"; maxLength?: number; options?: string[] }>;
       };
       match?: {
         extractRequirements: (text: string, userSkills?: string) => SmartFillRequirements;

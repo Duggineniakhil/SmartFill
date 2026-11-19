@@ -47,13 +47,18 @@
             "If the CV and profile don't contain what a question needs (for example salary, visa status, start date or a reference), return an empty answer and explain in \"note\".",
             "Short questions get a short, direct answer. Long questions get 80–180 words unless a limit is given; connect the applicant's real experience to this job.",
             "Never exceed a question's maxLength. Plain text only: no markdown, no bullet symbols, no placeholders like [Company].",
-            'Reply with JSON only, in this shape: {"answers":[{"id":"q1","answer":"…","note":""}]}.',
+            "Questions of type \"single\" have options: set \"choice\" to exactly one option, copied character for character. Questions of type \"multi\": set \"choices\" to every option that is true for the applicant, copied exactly.",
+            "Only pick an option the CV or profile supports. For work authorisation, sponsorship, relocation, notice period, salary or availability, pick an option only if the CV or profile states it; otherwise leave choice empty (or choices []) and explain in \"note\".",
+            "For \"How did you hear about us?\"-style questions with no basis in the CV, leave the choice empty.",
+            'Reply with JSON only, in this shape: {"answers":[{"id":"q1","answer":"…","note":""},{"id":"q2","choice":"Yes","note":""},{"id":"q3","choices":["Python","SQL"],"note":""}]}.',
         ].join("\n");
         const user = [
             `APPLICANT CV:\n${clip(cv, CV_LIMIT) || "(no CV provided)"}`,
             `APPLICANT PROFILE:\n${profileBlock(fields)}`,
             `JOB:\n${jobBlock(job)}`,
-            `QUESTIONS (JSON):\n${JSON.stringify(questions.map((q) => ({ id: q.id, question: q.label, length: q.kind, maxLength: q.maxLength || undefined })))}`,
+            `QUESTIONS (JSON):\n${JSON.stringify(questions.map((q) => (q.kind === "single" || q.kind === "multi"
+                ? { id: q.id, question: q.label, type: q.kind, options: q.options || [] }
+                : { id: q.id, question: q.label, type: q.kind, maxLength: q.maxLength || undefined })))}`,
         ].join("\n\n");
         return { system, user };
     }
@@ -88,6 +93,48 @@
     }
     const str = (v, max = 4000) => (typeof v === "string" ? v.trim().slice(0, max) : "");
     const list = (v, n = 4) => (Array.isArray(v) ? v.map((x) => str(x, 300)).filter(Boolean).slice(0, n) : []);
+    const normOption = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    // Map what the model said onto the real options. Exact (ignoring case and
+    // punctuation) first; otherwise a single option containing it, or contained
+    // in it. Anything else is dropped rather than guessed.
+    function matchOption(said, options) {
+        const want = normOption(said);
+        if (!want)
+            return null;
+        const exact = options.find((o) => normOption(o) === want);
+        if (exact)
+            return exact;
+        const loose = options.filter((o) => {
+            const n = normOption(o);
+            return n && (n.includes(want) || want.includes(n));
+        });
+        return loose.length === 1 ? loose[0] : null;
+    }
+    function readChoices(q, a) {
+        const options = q.options || [];
+        let said = [];
+        if (Array.isArray(a.choices))
+            said = a.choices.map((x) => str(x, 300));
+        else if (typeof a.choice === "string")
+            said = [a.choice];
+        else if (typeof a.answer === "string")
+            said = q.kind === "multi" ? a.answer.split(/[,;\n]/) : [a.answer];
+        said = said.map((x) => x.trim()).filter(Boolean);
+        const picked = [];
+        let unknown = "";
+        for (const x of said) {
+            const opt = matchOption(x, options);
+            if (opt && !picked.includes(opt))
+                picked.push(opt);
+            else if (!opt)
+                unknown = x;
+        }
+        const choices = q.kind === "single" ? picked.slice(0, 1) : picked;
+        let note = str(a.note, 300);
+        if (!choices.length && unknown)
+            note = `The AI suggested "${unknown.slice(0, 60)}", which isn't one of the options.`;
+        return { choices, note };
+    }
     function readAnswers(data, questions) {
         const raw = data?.answers;
         const byId = new Map();
@@ -95,15 +142,22 @@
             for (const a of raw) {
                 const id = str(a?.id, 50);
                 if (id)
-                    byId.set(id, { answer: str(a.answer), note: str(a.note, 300) });
+                    byId.set(id, a);
             }
         }
         return questions.map((q) => {
-            const got = byId.get(q.id) || { answer: "", note: "No answer returned." };
+            const a = byId.get(q.id);
+            if (q.kind === "single" || q.kind === "multi") {
+                if (!a)
+                    return { id: q.id, answer: "", choices: [], note: "No answer returned." };
+                const { choices, note } = readChoices(q, a);
+                return { id: q.id, answer: "", choices, note: choices.length ? "" : note || "Not enough in your CV to choose." };
+            }
+            const got = a ? { answer: str(a.answer), note: str(a.note, 300) } : { answer: "", note: "No answer returned." };
             let answer = got.answer.replace(/\*\*|__|^#+\s*/gm, "").replace(/\[(company|role|your name|name)\]/gi, "").trim();
             if (q.maxLength && answer.length > q.maxLength)
                 answer = answer.slice(0, q.maxLength).replace(/\s+\S*$/, "");
-            return { id: q.id, answer, note: got.note };
+            return { id: q.id, answer, choices: [], note: got.note };
         });
     }
     function readMatch(data) {
@@ -218,6 +272,6 @@
         const text = await complete(req.settings, matchPrompt(req.cv || "", req.fields || {}, req.job || {}), fetchImpl);
         return { match: { ...readMatch(parseJson(text)), provider, model, at: new Date().toISOString() }, provider, model };
     }
-    const api = { run, complete, answersPrompt, matchPrompt, parseJson, readAnswers, readMatch, activeConfig, DEFAULT_MODELS };
+    const api = { run, complete, answersPrompt, matchPrompt, parseJson, readAnswers, readMatch, matchOption, activeConfig, DEFAULT_MODELS };
     globalThis.SmartFillAI = api;
 })();

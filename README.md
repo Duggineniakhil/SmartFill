@@ -105,7 +105,12 @@ Bring your own **Google Gemini** or **Groq** API key (both have free tiers) and 
   - Drafts are outlined **amber**: read and edit each one. SmartFill never submits.
   - The AI is told to use only facts from your CV. When your CV doesn't cover a question (salary, visa,
     start date), it leaves the field empty and tells you why instead of making something up.
-  - Name, email, phone and other profile fields are still filled by the on-device autofill, not the AI.
+  - **Dropdowns, radio buttons and checkbox groups** are answered too ("Are you willing to relocate?",
+    "Which of these languages have you used?"), including Google Forms. The AI must pick from the real
+    options, and anything that isn't one of them is thrown away instead of guessed.
+  - It **never** answers equal-opportunity questions (gender, race, veteran or disability status and the
+    like) or ticks consent and "I agree" boxes; those are always left to you.
+  - Name, email and phone are still filled by the on-device autofill, never by the AI.
 - **Give an AI match analysis** — a 0–100 score with a summary, strengths, gaps and tips for positioning your
   application. Run it from the popup or with the **✦** button on any tracker card; the board shows it next to
   the on-device score, and "Best match" sorting uses it when it's there.
@@ -197,7 +202,8 @@ docs/screenshots/     images used in this README
 - [x] CV upload (PDF, Word, text)
 - [x] AI-drafted answers to custom questions from your CV and the job description (Gemini or Groq)
 - [x] Optional AI match analysis
-- [ ] AI answers for dropdown and multiple-choice questions
+- [x] AI answers for dropdown and multiple-choice questions
+- [ ] AI answers for custom (non-native) dropdowns such as Workday's and React Select
 - [ ] Multiple profiles
 - [ ] Import / export profiles
 - [ ] Cloud sync
