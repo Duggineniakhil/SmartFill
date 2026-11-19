@@ -243,12 +243,13 @@ export default function AutoFlowLanding() {
           alt="The tracker board with Interested, Applied, Interview, Offer and Closed columns, stats, match scores and a follow-up nudge"
           wide
         >
-          <p>Click Submit on Greenhouse, Lever, Workday, Ashby, LinkedIn or a company careers page and the application lands on
+          <p>Click Submit on Greenhouse, Lever, Workday, Ashby, iCIMS, LinkedIn or a company careers page and the application lands on
             your board with the company, role, location and date. Save jobs for later with <strong>Track this job</strong>.</p>
           <ul className="space-y-2 list-none">
             <Bullet>Drag cards through Interested → Applied → Interview → Offer, or to Closed.</Bullet>
             <Bullet>Applications this week, reply rate, interviews, offers — and a nudge after 14 days with no reply.</Bullet>
             <Bullet>Notes, search, filters, sort by best match, manual entries and CSV export.</Bullet>
+            <Bullet>No duplicates, and clean details: placeholder locations like "UNAVAILABLE" are dropped.</Bullet>
           </ul>
         </Feature>
 
@@ -307,7 +308,7 @@ export default function AutoFlowLanding() {
             <>Toggle <strong>Developer mode</strong> on (top-right).</>,
             <>Click <strong>Load unpacked</strong> and pick the unzipped folder. Pin SmartFill to your toolbar.</>,
             <>Click <strong>Open tracker</strong> in the popup, then <strong>Your CV</strong>: upload or paste your CV.</>,
-            <>Optional: under <strong className="text-violet-300">✦ AI settings</strong>, add a Gemini or Groq key and click <strong>Test connection</strong>.</>,
+            <>Optional: under <strong className="text-violet-300">✦ AI settings</strong>, add a Gemini or Groq key (or both, so one backs up the other) and click <strong>Test connection</strong>.</>,
             "Fill your next application by hand once — from then on, SmartFill takes it from there.",
           ].map((step, i) => (
             <li key={i} className="flex gap-5">
